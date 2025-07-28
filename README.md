@@ -1,4 +1,87 @@
-# 🎵 BeatSync Mixer
+# 🎵## Features
+
+- 🎶 **Spotify Integration**: OAuth login and playlist/track browsing
+- 🔄8. **Run the application**
+   ```bash
+   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+   python app.py
+   ```
+
+9. **Test the application** (optional)
+   ```bash
+   # In a new terminal, while the app is running:
+   source .venv/bin/activate
+   python test_app.py
+   ```
+
+10. **Access the app**
+    - Open http://127.0.0.1:8000 in your browser
+    - Click "🎵 Connect with Spotify" to get started
+
+## User Roles and Permissions
+
+BeatSync Mixer implements role-based access control with two user roles:
+
+### 🎛️ Host Role
+- **Who**: User with Spotify ID matching `HOST_SPOTIFY_ID` in environment variables
+- **Permissions**:
+  - Add tracks to the queue
+  - Clear the entire queue
+  - Vote on tracks
+  - Send chat messages
+- **UI**: Full access to all controls and features
+
+### 🎧 Listener Role  
+- **Who**: All other authenticated Spotify users
+- **Permissions**:
+  - View the queue and current tracks
+  - Vote on tracks
+  - Send chat messages
+  - Browse playlists and see recommendations
+- **Restrictions**: Cannot add tracks or clear the queue
+- **UI**: Queue management buttons are hidden/disabled
+
+### 🚫 Unauthenticated Users
+- **Permissions**: Read-only access to view queue and chat
+- **Restrictions**: Cannot vote, chat, or manage queue
+- **UI**: Must authenticate with Spotify to interact
+
+## Testing Role-Based Access
+
+To test different user roles:
+
+### Testing as Host
+1. Set your Spotify ID in `.env` as `HOST_SPOTIFY_ID`
+2. Log in with that Spotify account
+3. Verify you can add tracks and clear the queue
+4. Check that the UI shows "Host" role indicator
+
+### Testing as Listener
+1. Log in with a different Spotify account (not the host ID)
+2. Verify the UI shows "Listener" role indicator
+3. Confirm queue management buttons are hidden/disabled
+4. Test that voting and chat still work
+
+### Testing Unauthenticated Access
+1. Open the app without logging in
+2. Verify you can only view content, not interact
+3. Confirm all interactive elements require authentication
+
+### Running RBAC Tests
+```bash
+# Run the custom RBAC test script
+python test_rbac.py
+
+# Or run the full test suite
+python -m pytest tests/ -v
+```ue**: Socket.IO powered collaborative track queuing
+- 👍 **Voting System**: Upvote/downvote tracks with real-time updates
+- 💬 **Chat Functionality**: Real-time messaging during listening sessions
+- 🎯 **Recommendations**: Last.fm powered similar track suggestions
+- 🔐 **Role-Based Access Control**: Host and listener roles with appropriate permissions
+- 💾 **Persistent Storage**: SQLAlchemy database for queue, votes, and chat persistence
+- 📱 **Responsive UI**: Modern, mobile-friendly interface
+- 🚀 **Real-time Updates**: Live queue updates across all connected clientsMixer
 
 A Flask + Socket.IO web application that lets users connect with Spotify, browse their playlists, and collaboratively queue tracks in real-time.
 
@@ -51,16 +134,26 @@ A Flask + Socket.IO web application that lets users connect with Spotify, browse
 4. **Set up environment variables**
    ```bash
    cp .env.example .env
-   # Edit .env with your Spotify app credentials
+   # Edit .env with your Spotify app credentials and host configuration
    ```
 
-5. **Configure Spotify App**
+5. **Configure Role-Based Access**
+   ```bash
+   # Set the Spotify ID that should have host privileges
+   HOST_SPOTIFY_ID=your-spotify-user-id
+   ```
+   To find your Spotify ID:
+   - Go to your Spotify profile in the app or web player
+   - Click "..." → "Share" → "Copy link to profile"
+   - Extract the ID from the URL: `https://open.spotify.com/user/YOUR_ID_HERE`
+
+6. **Configure Spotify App**
    - Go to [Spotify Developer Dashboard](https://developer.spotify.com/dashboard)
    - Create a new app
    - Add `http://localhost:8000/callback` to Redirect URIs
    - Copy Client ID and Client Secret to `.env`
 
-6. **Configure Last.fm API** (for recommendations)
+7. **Configure Last.fm API** (for recommendations)
    - Go to [Last.fm API Account](https://www.last.fm/api/account/create)
    - Create a new API account to get your API key and shared secret
    - Add the credentials to your `.env` file:
@@ -69,7 +162,7 @@ A Flask + Socket.IO web application that lets users connect with Spotify, browse
      LASTFM_SHARED_SECRET=your-lastfm-shared-secret
      ```
 
-7. **Run the application**
+8. **Run the application**
    ```bash
    source .venv/bin/activate  # On Windows: .venv\Scripts\activate
    python app.py
@@ -110,16 +203,16 @@ beatsync-mixer/
 - `GET /playlists/<id>/tracks` - Fetch playlist tracks
 - `GET /recommend/<track_uri>` - Get Last.fm recommendations for a track
 - `GET /queue` - Get current queue items
-- `POST /queue/clear` - Clear all items from the queue
+- `POST /queue/clear` - Clear all items from the queue (host only)
 
 ## Socket.IO Events
 
 - `connect` - Client connection (loads existing queue, votes, and chat)
-- `queue_add` - Add track to queue
+- `queue_add` - Add track to queue (host only)
 - `queue_updated` - Broadcast queue updates
-- `vote_add` - Add vote for a track
+- `vote_add` - Add vote for a track (authenticated users only)
 - `vote_updated` - Broadcast vote count updates
-- `chat_message` - Send/receive chat messages
+- `chat_message` - Send/receive chat messages (authenticated users only)
 - `queue_cleared` - Broadcast queue clear event
 
 ## Recommendations
@@ -144,10 +237,10 @@ Already implemented:
 - ✅ **Chat Functionality**: Real-time chat for users during sessions
 - ✅ **Recommendations**: Last.fm powered similar track suggestions
 - ✅ **Queue Management**: Clear queue, persistent storage
+- ✅ **Role-Based Access Control**: Host and listener roles with appropriate permissions
 
 Still to implement:
-- [ ] **Web Playback SDK**: Direct Spotify playback control in browser
-- [ ] **User Roles**: DJ/admin controls and permissions
+- [ ] **Web Playbook SDK**: Direct Spotify playback control in browser
 - [ ] **Advanced Queue**: Remove, reorder individual tracks
 - [ ] **Room System**: Multiple separate queue rooms
 - [ ] **Analytics**: Track popularity and usage statistics
@@ -167,12 +260,15 @@ DATABASE_URL=postgresql://user:password@localhost/beatsync
 ### Running Tests
 
 ```bash
-# Run all tests (17 tests including Last.fm recommendations)
+# Run all tests including RBAC tests
 python -m pytest tests/ -v
 
 # Run specific test categories
 python -m pytest tests/test_app.py::TestLastFMRecommendations -v
 python -m pytest tests/test_socketio.py -v
+
+# Test role-based access control
+python test_rbac.py
 
 # Quick API tests
 python test_app.py
@@ -191,11 +287,20 @@ docker run -p 8000:8000 beatsync-mixer
 
 ## Contributing
 
+Please read [CONTRIBUTING.md](.github/CONTRIBUTING.md) for details on our development process and guidelines.
+
+Quick start:
 1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests (when test framework is implemented)
-5. Submit a pull request
+2. Create a feature branch (`git checkout -b feature/your-feature`)
+3. Make your changes and add tests
+4. Ensure all tests pass, including RBAC tests
+5. Submit a pull request using the provided template
+
+When contributing RBAC-related features:
+- Test both host and listener roles
+- Verify unauthorized access is properly blocked
+- Update frontend UI to reflect role restrictions
+- Update documentation for any new role-based features
 
 ## License
 
