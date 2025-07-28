@@ -78,7 +78,7 @@ class TestQueueEndpoints:
         assert data['queue'] == []
     
     def test_clear_queue_endpoint(self, client):
-        """Clear queue endpoint should work"""
+        """Clear queue endpoint should require host authentication"""
         # Add some test data first
         db = SessionLocal()
         test_item = QueueItem(
@@ -89,16 +89,16 @@ class TestQueueEndpoints:
         db.commit()
         db.close()
         
-        # Clear the queue
+        # Clear the queue without authentication should fail
         response = client.post('/queue/clear')
-        assert response.status_code == 200
-        data = json.loads(response.data)
-        assert data['status'] == 'success'
+        assert response.status_code == 403
+        # abort(403) returns HTML, not JSON
+        assert 'Forbidden' in response.data.decode('utf-8')
         
-        # Verify queue is empty
+        # Verify queue still has items (wasn't cleared)
         response = client.get('/queue')
         data = json.loads(response.data)
-        assert data['count'] == 0
+        assert data['count'] == 1  # Item should still be there since clear was blocked
 
 
 class TestSocketIOEvents:

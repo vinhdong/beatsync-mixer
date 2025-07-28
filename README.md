@@ -9,9 +9,8 @@
 
 9. **Test the application** (optional)
    ```bash
-   # In a new terminal, while the app is running:
-   source .venv/bin/activate
-   python test_app.py
+   # Run the test suite
+   python -m pytest tests/ -v
    ```
 
 10. **Access the app**
@@ -269,9 +268,6 @@ python -m pytest tests/test_socketio.py -v
 
 # Test role-based access control
 python test_rbac.py
-
-# Quick API tests
-python test_app.py
 
 # Full feature demonstration
 python demo.py
