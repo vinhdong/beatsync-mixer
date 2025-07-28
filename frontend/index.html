@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>BeatSync Mixer</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 20px;
+      background-color: #f5f5f5;
+    }
+    h1 {
+      color: #1db954;
+      text-align: center;
+    }
+    h2 {
+      color: #333;
+      border-bottom: 2px solid #1db954;
+      padding-bottom: 10px;
+    }
+    #login {
+      text-align: center;
+      margin: 40px 0;
+    }
+    #login a {
+      display: inline-block;
+      background-color: #1db954;
+      color: white;
+      padding: 12px 24px;
+      text-decoration: none;
+      border-radius: 50px;
+      font-weight: bold;
+      transition: background-color 0.3s;
+    }
+    #login a:hover {
+      background-color: #1ed760;
+    }
+    ul {
+      list-style: none;
+      padding: 0;
+    }
+    li {
+      background: white;
+      margin: 10px 0;
+      padding: 15px;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    li:hover {
+      cursor: pointer;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+    }
+    button {
+      background-color: #1db954;
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 20px;
+      cursor: pointer;
+      font-weight: bold;
+      transition: background-color 0.3s;
+    }
+    button:hover {
+      background-color: #1ed760;
+    }
+    #back-btn {
+      background-color: #666;
+      margin-bottom: 15px;
+    }
+    #back-btn:hover {
+      background-color: #777;
+    }
+    .container {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 30px;
+      margin-top: 20px;
+    }
+    .section {
+      background: white;
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+    #queue-section {
+      grid-column: 1 / -1;
+    }
+    #chat-section {
+      background: white;
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+      height: 400px;
+      display: flex;
+      flex-direction: column;
+    }
+    #chat-messages {
+      flex: 1;
+      overflow-y: auto;
+      border: 1px solid #ddd;
+      padding: 10px;
+      margin-bottom: 10px;
+      border-radius: 4px;
+      background: #f9f9f9;
+    }
+    .chat-message {
+      margin-bottom: 8px;
+      padding: 5px;
+      border-radius: 3px;
+    }
+    .chat-user {
+      font-weight: bold;
+      color: #1db954;
+    }
+    .chat-time {
+      font-size: 0.8em;
+      color: #666;
+    }
+    #chat-form {
+      display: flex;
+      gap: 10px;
+    }
+    #chat-input {
+      flex: 1;
+      padding: 8px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+    }
+    .vote-buttons {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin-top: 5px;
+    }
+    .vote-btn {
+      background: none;
+      border: none;
+      font-size: 1.2em;
+      cursor: pointer;
+      padding: 5px;
+      border-radius: 3px;
+      transition: background-color 0.2s;
+    }
+    .vote-btn:hover {
+      background-color: #f0f0f0;
+    }
+    .vote-count {
+      font-size: 0.9em;
+      color: #666;
+    }
+    .recommendations-btn {
+      background-color: #3498db;
+      color: white;
+      border: none;
+      padding: 5px 10px;
+      border-radius: 15px;
+      font-size: 0.8em;
+      cursor: pointer;
+      transition: background-color 0.3s;
+      margin-left: 10px;
+    }
+    .recommendations-btn:hover {
+      background-color: #2980b9;
+    }
+    .recommendations-list {
+      margin-top: 10px;
+      padding: 10px;
+      background-color: #f8f9fa;
+      border-radius: 5px;
+      border-left: 3px solid #3498db;
+      display: none;
+    }
+    .recommendations-list.visible {
+      display: block;
+    }
+    .recommendation-item {
+      padding: 5px 0;
+      border-bottom: 1px solid #dee2e6;
+    }
+    .recommendation-item:last-child {
+      border-bottom: none;
+    }
+    .recommendation-link {
+      color: #3498db;
+      text-decoration: none;
+      font-weight: 500;
+    }
+    .recommendation-link:hover {
+      text-decoration: underline;
+    }
+    #playback-section {
+      background: white;
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+      text-align: center;
+    }
+    #play-btn {
+      background-color: #1db954;
+      color: white;
+      border: none;
+      padding: 15px 30px;
+      border-radius: 50px;
+      font-size: 1.1em;
+      font-weight: bold;
+      cursor: pointer;
+      transition: background-color 0.3s;
+    }
+    #play-btn:hover {
+      background-color: #1ed760;
+    }
+    #play-btn:disabled {
+      background-color: #ccc;
+      cursor: not-allowed;
+    }
+    @media (max-width: 768px) {
+      .container {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <h1>🎵 BeatSync Mixer</h1>
+
+  <div id="login">
+    <a href="/login">🎵 Connect with Spotify</a>
+  </div>
+
+  <div class="container">
+    <div id="playlists" style="display:none;" class="section">
+      <h2>Your Playlists</h2>
+      <ul id="playlist-list"></ul>
+    </div>
+
+    <div id="tracks" style="display:none;" class="section">
+      <button id="back-btn" style="margin-bottom:10px;">← Back to Playlists</button>
+      <h2>Playlist Tracks</h2>
+      <ul id="track-list"></ul>
+    </div>
+
+    <div id="queue-section" class="section">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+        <h2>Current Queue</h2>
+        <button id="clear-queue-btn" onclick="clearQueue()" style="background-color: #e74c3c;">Clear Queue</button>
+      </div>
+      <ul id="queue"></ul>
+      <div id="queue-empty" style="display: none; text-align: center; color: #666; padding: 20px;">
+        No tracks in queue. Add some music! 🎵
+      </div>
+    </div>
+
+    <div class="container">
+      <div id="chat-section">
+        <h3>Chat</h3>
+        <div id="chat-messages"></div>
+        <form id="chat-form" onsubmit="sendChatMessage(event)">
+          <input type="text" id="chat-input" placeholder="Type a message..." maxlength="200">
+          <button type="submit">Send</button>
+        </form>
+      </div>
+
+      <div id="playback-section">
+        <h3>Playback Control</h3>
+        <!-- TODO: Integrate Spotify Web Playback SDK -->
+        <p>Web Playback SDK integration coming soon!</p>
+        <button id="play-btn" onclick="playTrack()" disabled>
+          ▶️ Play Current Track
+        </button>
+        <div id="playback-status" style="margin-top: 10px; color: #666;">
+          <small>Connect Spotify Premium account to enable playback</small>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TODO: Add voting system for queue items -->
+  <!-- TODO: Add chat functionality -->
+  <!-- TODO: Integrate Spotify Web Playback SDK for playback control -->
+
+  <script src="https://cdn.socket.io/4.5.0/socket.io.min.js"></script>
+  <script>
+    const socket = io();
+    let queueCount = 0;
+    let currentUser = 'User_' + Math.random().toString(36).substr(2, 9); // Generate random user ID
+    let voteData = {}; // Store vote counts for tracks
+
+    socket.on("queue_updated", data => {
+      const li = document.createElement("li");
+      const trackId = data.track_uri;
+      const safeTrackId = trackId.replace(/[^a-zA-Z0-9]/g, '_');
+      li.setAttribute('data-track-uri', trackId);
+      li.innerHTML = `
+        <div>
+          <span>${data.track_name || data.track_uri}</span>
+          <small>Added: ${new Date(data.timestamp || Date.now()).toLocaleTimeString()}</small>
+          <div class="vote-buttons">
+            <button class="vote-btn" onclick="voteTrack('${trackId}', 'up')">👍</button>
+            <span class="vote-count" id="up-${safeTrackId}">0</span>
+            <button class="vote-btn" onclick="voteTrack('${trackId}', 'down')">👎</button>
+            <span class="vote-count" id="down-${safeTrackId}">0</span>
+            <button class="recommendations-btn" onclick="loadRecs('${trackId}', '${safeTrackId}')">See Similar Tracks</button>
+          </div>
+          <div id="recs-${safeTrackId}" class="recommendations-list"></div>
+        </div>
+      `;
+      document.getElementById("queue").appendChild(li);
+      queueCount++;
+      updateQueueDisplay();
+    });
+
+    socket.on("queue_cleared", () => {
+      document.getElementById("queue").innerHTML = '';
+      queueCount = 0;
+      voteData = {};
+      updateQueueDisplay();
+    });
+
+    socket.on("vote_updated", data => {
+      const trackId = data.track_uri;
+      const safeId = trackId.replace(/[^a-zA-Z0-9]/g, '_');
+      const upElement = document.getElementById(`up-${safeId}`);
+      const downElement = document.getElementById(`down-${safeId}`);
+      
+      if (upElement) upElement.textContent = data.up_votes;
+      if (downElement) downElement.textContent = data.down_votes;
+      
+      voteData[trackId] = {
+        up: data.up_votes,
+        down: data.down_votes
+      };
+    });
+
+    socket.on("chat_message", data => {
+      const chatMessages = document.getElementById("chat-messages");
+      const messageDiv = document.createElement("div");
+      messageDiv.className = "chat-message";
+      messageDiv.innerHTML = `
+        <span class="chat-user">${data.user}:</span> 
+        ${data.message}
+        <span class="chat-time">${new Date(data.timestamp || Date.now()).toLocaleTimeString()}</span>
+      `;
+      chatMessages.appendChild(messageDiv);
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+    });
+
+    function voteTrack(trackUri, voteType) {
+      socket.emit('vote_add', {
+        track_uri: trackUri,
+        vote: voteType,
+        user_id: currentUser
+      });
+    }
+
+    function sendChatMessage(event) {
+      event.preventDefault();
+      const input = document.getElementById('chat-input');
+      const message = input.value.trim();
+      
+      if (message) {
+        // Use session user info instead of random currentUser
+        const user = window.displayName || window.userId || 'Anonymous';
+        socket.emit('chat_message', {
+          user: user,
+          message: message
+        });
+        input.value = '';
+      }
+    }
+
+    function playTrack() {
+      // TODO: Implement Spotify Web Playback SDK integration
+      // This will require:
+      // 1. Loading the Spotify Web Playback SDK
+      // 2. Authenticating with Spotify Premium
+      // 3. Creating a Web Playback instance
+      // 4. Playing the first track in queue
+      alert('Spotify Web Playback SDK integration coming soon!\n\nThis will require:\n- Spotify Premium account\n- Web Playback SDK setup\n- Device authorization');
+    }
+
+    function updateQueueDisplay() {
+      const queueEmpty = document.getElementById("queue-empty");
+      const clearBtn = document.getElementById("clear-queue-btn");
+      
+      if (queueCount === 0) {
+        queueEmpty.style.display = "block";
+        clearBtn.style.display = "none";
+      } else {
+        queueEmpty.style.display = "none";
+        clearBtn.style.display = "inline-block";
+      }
+    }
+
+    async function clearQueue() {
+      if (confirm('Are you sure you want to clear the entire queue?')) {
+        try {
+          const response = await fetch('/queue/clear', { method: 'POST' });
+          if (response.ok) {
+            // The socket event will handle UI update
+          } else {
+            alert('Failed to clear queue');
+          }
+        } catch (err) {
+          console.error('Error clearing queue:', err);
+          alert('Error clearing queue');
+        }
+      }
+    }
+
+    async function loadPlaylists() {
+      try {
+        const res = await fetch('/playlists');
+        if (res.redirected) {
+          document.getElementById('login').style.display = 'block';
+          return;
+        }
+        const data = await res.json();
+        document.getElementById('login').style.display = 'none';
+        document.getElementById('playlists').style.display = 'block';
+        const ul = document.getElementById('playlist-list');
+        ul.innerHTML = ''; // Clear existing playlists
+        data.items.forEach(pl => {
+          const li = document.createElement('li');
+          li.innerHTML = `
+            <span>${pl.name}</span>
+            <small>${pl.tracks.total} tracks</small>
+          `;
+          li.onclick = () => loadPlaylistTracks(pl.id);
+          ul.appendChild(li);
+        });
+      } catch (err) {
+        console.error('Error loading playlists:', err);
+      }
+    }
+
+    function queueTrack(trackUri, trackName) {
+      socket.emit('queue_add', { 
+        track_uri: trackUri,
+        track_name: trackName
+      });
+    }
+
+    async function loadPlaylistTracks(playlistId) {
+      try {
+        const res = await fetch(`/playlists/${playlistId}/tracks`);
+        if (res.redirected) {
+          window.location = res.url;
+          return;
+        }
+        const data = await res.json();
+        document.getElementById('playlists').style.display = 'none';
+        document.getElementById('tracks').style.display = 'block';
+        const ul = document.getElementById('track-list');
+        ul.innerHTML = '';
+
+        data.items.forEach(item => {
+          const t = item.track;
+          if (t && t.name) { // Check if track exists (some tracks can be null)
+            const li = document.createElement('li');
+            li.innerHTML = `
+              <div>
+                <strong>${t.name}</strong><br>
+                <small>${t.artists.map(a => a.name).join(', ')}</small>
+              </div>
+            `;
+            const btn = document.createElement('button');
+            btn.textContent = 'Add to Queue';
+            btn.onclick = () => queueTrack(t.uri, `${t.name} - ${t.artists.map(a => a.name).join(', ')}`);
+            
+            // Only show Add to Queue button for hosts
+            if (window.userRole === 'host') {
+              li.appendChild(btn);
+            } else {
+              // Show disabled button with explanation for listeners
+              btn.disabled = true;
+              btn.textContent = 'Host Only';
+              btn.style.opacity = '0.5';
+              li.appendChild(btn);
+            }
+            
+            ul.appendChild(li);
+          }
+        });
+      } catch (err) {
+        console.error('Error loading playlist tracks:', err);
+      }
+    }
+
+    window.onload = function() {
+      loadPlaylists();
+      loadInitialQueue();
+      document.getElementById('back-btn').onclick = function() {
+        document.getElementById('tracks').style.display = 'none';
+        document.getElementById('playlists').style.display = 'block';
+        // clear track list
+        document.getElementById('track-list').innerHTML = '';
+      };
+    };
+
+    async function loadInitialQueue() {
+      try {
+        const response = await fetch('/queue');
+        const data = await response.json();
+        queueCount = data.count;
+        updateQueueDisplay();
+      } catch (err) {
+        console.error('Error loading initial queue:', err);
+      }
+    }
+
+    // Load Last.fm recommendations for a track
+    async function loadRecs(trackUri, safeTrackId) {
+      const recsContainer = document.getElementById(`recs-${safeTrackId}`);
+      const btn = event.target;
+      
+      // Toggle visibility if already loaded
+      if (recsContainer.classList.contains('visible')) {
+        recsContainer.classList.remove('visible');
+        btn.textContent = 'See Similar Tracks';
+        return;
+      }
+      
+      // Show loading state
+      btn.textContent = 'Loading...';
+      btn.disabled = true;
+      
+      try {
+        const response = await fetch(`/recommend/${encodeURIComponent(trackUri)}`);
+        
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        const recommendations = data.recommendations || [];
+        
+        if (recommendations.length === 0) {
+          recsContainer.innerHTML = '<div class="recommendation-item">No similar tracks found.</div>';
+        } else {
+          recsContainer.innerHTML = recommendations.map(rec => `
+            <div class="recommendation-item">
+              <a href="${rec.url}" target="_blank" class="recommendation-link">
+                ${rec.artist} — ${rec.title}
+              </a>
+            </div>
+          `).join('');
+        }
+        
+        recsContainer.classList.add('visible');
+        btn.textContent = 'Hide Similar Tracks';
+        
+      } catch (error) {
+        console.error('Error loading recommendations:', error);
+        recsContainer.innerHTML = '<div class="recommendation-item" style="color: #e74c3c;">Error loading recommendations. Please try again.</div>';
+        recsContainer.classList.add('visible');
+        btn.textContent = 'See Similar Tracks';
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    // Role-based UI initialization
+    function initializeRoleBasedUI() {
+      const role = window.userRole || 'guest';
+      console.log('Initializing UI for role:', role);
+      
+      // Update UI based on role
+      if (role === 'guest') {
+        // Hide login-required features for guests
+        document.getElementById('queue-section').style.display = 'none';
+        document.getElementById('chat-section').style.display = 'none';
+        document.getElementById('playback-section').style.display = 'none';
+        
+        // Show login prompt
+        const loginDiv = document.getElementById('login');
+        if (loginDiv) {
+          loginDiv.style.display = 'block';
+        }
+      } else if (role === 'listener') {
+        // Hide host-only controls for listeners
+        const clearQueueBtn = document.getElementById('clear-queue-btn');
+        if (clearQueueBtn) {
+          clearQueueBtn.style.display = 'none';
+        }
+        
+        // Hide login section
+        const loginDiv = document.getElementById('login');
+        if (loginDiv) {
+          loginDiv.style.display = 'none';
+        }
+        
+        // Show role indicator
+        addRoleIndicator('listener');
+      } else if (role === 'host') {
+        // Show all controls for hosts
+        const loginDiv = document.getElementById('login');
+        if (loginDiv) {
+          loginDiv.style.display = 'none';
+        }
+        
+        // Show role indicator
+        addRoleIndicator('host');
+      }
+    }
+
+    function addRoleIndicator(role) {
+      const h1 = document.querySelector('h1');
+      if (h1 && !document.querySelector('.role-indicator')) {
+        const roleSpan = document.createElement('span');
+        roleSpan.className = 'role-indicator';
+        roleSpan.style.cssText = 'font-size: 0.6em; background: #1db954; color: white; padding: 4px 8px; border-radius: 12px; margin-left: 10px;';
+        roleSpan.textContent = role.toUpperCase();
+        h1.appendChild(roleSpan);
+        
+        // Also show display name if available
+        if (window.displayName && window.displayName !== 'Guest') {
+          const nameSpan = document.createElement('div');
+          nameSpan.style.cssText = 'font-size: 0.7em; color: #666; margin-top: 5px;';
+          nameSpan.textContent = `Welcome, ${window.displayName}!`;
+          h1.appendChild(nameSpan);
+        }
+      }
+    }
+
+    // Override queueTrack function to check role
+    const originalQueueTrack = window.queueTrack;
+    window.queueTrack = function(trackUri, trackName) {
+      if (window.userRole !== 'host') {
+        alert('Only hosts can add tracks to the queue');
+        return;
+      }
+      originalQueueTrack(trackUri, trackName);
+    };
+
+    // Override clearQueue function to check role
+    const originalClearQueue = window.clearQueue;
+    window.clearQueue = function() {
+      if (window.userRole !== 'host') {
+        alert('Only hosts can clear the queue');
+        return;
+      }
+      originalClearQueue();
+    };
+
+    // Initialize role-based UI when page loads
+    document.addEventListener('DOMContentLoaded', initializeRoleBasedUI);
+  </script>
+</body>
+</html>
