@@ -6,24 +6,234 @@
   <style>
     body {
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      margin: 0;
+      padding: 0;
+      background-color: #000;
+      color: white;
+      padding-top: 120px; /* Space for Spotify player */
+      overflow-x: hidden; /* Prevent horizontal scroll */
+    }
+
+    /* Spotify Web Player - Fixed at top */
+    #spotify-player-container {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 100px;
+      background: linear-gradient(90deg, #121212 0%, #282828 100%);
+      z-index: 1000;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      border-bottom: 1px solid #333;
+      backdrop-filter: blur(10px); /* Add blur effect for better separation */
+    }
+
+    #full-player {
+      width: 100%;
+      height: 100%;
+      padding: 0 20px;
+    }
+
+    .player-content {
+      display: flex;
+      align-items: center;
+      height: 100%;
+      max-width: 1200px;
+      margin: 0 auto;
+      gap: 20px;
+    }
+
+    .track-info {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex: 1;
+      min-width: 0;
+    }
+
+    .track-details {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .track-name {
+      font-size: 14px;
+      font-weight: 600;
+      color: white;
+      margin-bottom: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .track-artist {
+      font-size: 12px;
+      color: #b3b3b3;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .player-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .control-btn {
+      background: none;
+      border: none;
+      color: #b3b3b3;
+      font-size: 16px;
+      cursor: pointer;
+      padding: 8px;
+      border-radius: 50%;
+      transition: all 0.2s;
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .control-btn:hover:not(:disabled) {
+      color: white;
+      background-color: rgba(255,255,255,0.1);
+    }
+
+    .control-btn:disabled {
+      opacity: 0.3;
+      cursor: not-allowed;
+    }
+
+    .play-btn {
+      background-color: white !important;
+      color: black !important;
+      font-size: 14px;
+      width: 32px;
+      height: 32px;
+    }
+
+    .play-btn:hover:not(:disabled) {
+      background-color: #f0f0f0 !important;
+      transform: scale(1.05);
+    }
+
+    .progress-section {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      flex: 1;
+      max-width: 200px;
+    }
+
+    .progress-bar-container {
+      width: 100%;
+      height: 4px;
+      background: #4f4f4f;
+      border-radius: 2px;
+      cursor: pointer;
+      position: relative;
+    }
+
+    .progress-bar {
+      width: 100%;
+      height: 100%;
+      position: relative;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: #1db954;
+      border-radius: 2px;
+      width: 0%;
+      transition: width 0.1s;
+    }
+
+    .time-info {
+      font-size: 11px;
+      color: #b3b3b3;
+      white-space: nowrap;
+    }
+
+    .volume-section {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 120px;
+    }
+
+    .volume-icon {
+      color: #b3b3b3;
+      font-size: 14px;
+    }
+
+    .volume-slider {
+      width: 80px;
+      height: 4px;
+      background: #4f4f4f;
+      border-radius: 2px;
+      outline: none;
+      -webkit-appearance: none;
+      appearance: none;
+    }
+
+    .volume-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: white;
+      cursor: pointer;
+    }
+
+    .status {
+      font-size: 11px;
+      color: #b3b3b3;
+      min-width: 100px;
+      text-align: right;
+    }
+
+    /* Main content area */
+    .main-content {
       max-width: 1200px;
       margin: 0 auto;
       padding: 20px;
       background-color: #f5f5f5;
+      min-height: calc(100vh - 120px);
+      border-radius: 8px 8px 0 0;
+      position: relative;
+      z-index: 1; /* Ensure content stays below fixed player */
     }
+
     h1 {
       color: #1db954;
       text-align: center;
+      margin-bottom: 30px;
     }
+
+    /* Header with restart button */
+    .header-container {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+      position: relative;
+      z-index: 10; /* Ensure header is above other content */
+    }
+
     h2 {
       color: #333;
       border-bottom: 2px solid #1db954;
       padding-bottom: 10px;
     }
+
     #login {
       text-align: center;
       margin: 40px 0;
     }
+
     #login a {
       display: inline-block;
       background-color: #1db954;
@@ -34,13 +244,16 @@
       font-weight: bold;
       transition: background-color 0.3s;
     }
+
     #login a:hover {
       background-color: #1ed760;
     }
+
     ul {
       list-style: none;
       padding: 0;
     }
+
     li {
       background: white;
       margin: 10px 0;
@@ -50,11 +263,14 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
+      color: #333;
     }
+
     li:hover {
       cursor: pointer;
       box-shadow: 0 4px 8px rgba(0,0,0,0.15);
     }
+
     button {
       background-color: #1db954;
       color: white;
@@ -65,71 +281,140 @@
       font-weight: bold;
       transition: background-color 0.3s;
     }
+
     button:hover {
       background-color: #1ed760;
     }
+
     #back-btn {
       background-color: #666;
       margin-bottom: 15px;
     }
+
     #back-btn:hover {
       background-color: #777;
     }
-    .container {
+
+    /* Side by side layout for playlists and queue */
+    .content-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 30px;
+      gap: 20px;
       margin-top: 20px;
     }
+
     .section {
       background: white;
       padding: 20px;
       border-radius: 12px;
       box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+      color: #333;
     }
-    #queue-section {
-      grid-column: 1 / -1;
-    }
-    #chat-section {
+
+    /* Floating Chat Box */
+    #floating-chat {
+      position: fixed;
+      bottom: 20px;
+      left: 20px;
+      width: 320px;
       background: white;
-      padding: 20px;
       border-radius: 12px;
-      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-      height: 400px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+      z-index: 999;
+      transition: all 0.3s ease;
+      border: 1px solid #ddd;
+    }
+
+    #floating-chat.minimized {
+      height: 50px;
+      overflow: hidden;
+    }
+
+    #chat-header {
+      background: #1db954;
+      color: white;
+      padding: 12px 16px;
+      border-radius: 12px 12px 0 0;
+      font-weight: bold;
+      font-size: 14px;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      user-select: none;
+    }
+
+    #chat-toggle {
+      background: none;
+      border: none;
+      color: white;
+      font-size: 16px;
+      cursor: pointer;
+      padding: 0;
+      width: 20px;
+      height: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #chat-content {
+      height: 300px;
       display: flex;
       flex-direction: column;
+      color: #333;
     }
+
     #chat-messages {
       flex: 1;
       overflow-y: auto;
-      border: 1px solid #ddd;
-      padding: 10px;
-      margin-bottom: 10px;
-      border-radius: 4px;
+      padding: 12px;
       background: #f9f9f9;
+      border-bottom: 1px solid #eee;
     }
+
     .chat-message {
       margin-bottom: 8px;
-      padding: 5px;
-      border-radius: 3px;
+      padding: 6px 8px;
+      border-radius: 4px;
+      background: white;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+      font-size: 13px;
     }
+
     .chat-user {
       font-weight: bold;
       color: #1db954;
+      font-size: 12px;
     }
+
     .chat-time {
-      font-size: 0.8em;
+      font-size: 10px;
       color: #666;
+      float: right;
     }
+
     #chat-form {
+      padding: 12px;
       display: flex;
-      gap: 10px;
+      gap: 8px;
+      background: white;
+      border-radius: 0 0 12px 12px;
     }
+
     #chat-input {
       flex: 1;
-      padding: 8px;
+      padding: 8px 12px;
       border: 1px solid #ddd;
-      border-radius: 4px;
+      border-radius: 20px;
+      font-size: 13px;
+      outline: none;
+    }
+
+    #chat-form button {
+      padding: 8px 16px;
+      font-size: 12px;
+      border-radius: 20px;
     }
     .vote-buttons {
       display: flex;
@@ -144,10 +429,33 @@
       cursor: pointer;
       padding: 5px;
       border-radius: 3px;
-      transition: background-color 0.2s;
+      transition: all 0.2s ease;
+      position: relative;
     }
     .vote-btn:hover {
       background-color: #f0f0f0;
+      transform: scale(1.1);
+    }
+    .vote-btn:active {
+      transform: scale(0.9);
+    }
+    .vote-btn.just-voted {
+      animation: buttonPulse 0.3s ease-out;
+    }
+    
+    @keyframes buttonPulse {
+      0% {
+        transform: scale(1);
+        background-color: transparent;
+      }
+      50% {
+        transform: scale(1.2);
+        background-color: rgba(29, 185, 84, 0.3);
+      }
+      100% {
+        transform: scale(1);
+        background-color: #f0f0f0;
+      }
     }
     .vote-count {
       font-size: 0.9em;
@@ -218,64 +526,400 @@
       background-color: #ccc;
       cursor: not-allowed;
     }
+    /* Playback control styles */
+    #playback-controls button {
+      background-color: #1db954;
+      border: none;
+      color: white;
+      width: 45px;
+      height: 45px;
+      border-radius: 50%;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #playback-controls button:hover:not(:disabled) {
+      background-color: #1ed760;
+      transform: scale(1.05);
+    }
+    #playback-controls button:disabled {
+      background-color: #ccc;
+      cursor: not-allowed;
+      transform: none;
+    }
+    #play-pause-btn {
+      width: 55px !important;
+      height: 55px !important;
+    }
+    #volume-control input[type="range"] {
+      -webkit-appearance: none;
+      height: 5px;
+      border-radius: 5px;
+      background: #ddd;
+      outline: none;
+    }
+    #volume-control input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: #1db954;
+      cursor: pointer;
+    }
+    #now-playing {
+      border-left: 4px solid #1db954;
+    }
+    .next-to-play {
+      border-left: 4px solid #1db954 !important;
+      background: linear-gradient(90deg, rgba(29, 185, 84, 0.1) 0%, rgba(255, 255, 255, 0.05) 100%) !important;
+    }
+    .next-to-play::before {
+      content: "▶️ NEXT";
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      background: #1db954;
+      color: white;
+      padding: 2px 6px;
+      border-radius: 8px;
+      font-size: 10px;
+      font-weight: bold;
+    }
+    .queue-item {
+      position: relative;
+      transition: all 0.5s cubic-bezier(0.4, 0.0, 0.2, 1);
+      transform: translateY(0);
+    }
+    
+    .queue-item.moving-up {
+      animation: slideUp 0.6s cubic-bezier(0.4, 0.0, 0.2, 1);
+    }
+    
+    .queue-item.moving-down {
+      animation: slideDown 0.6s cubic-bezier(0.4, 0.0, 0.2, 1);
+    }
+    
+    @keyframes slideUp {
+      0% {
+        transform: translateY(0);
+        background-color: rgba(29, 185, 84, 0.1);
+      }
+      50% {
+        transform: translateY(-10px);
+        background-color: rgba(29, 185, 84, 0.3);
+        box-shadow: 0 4px 12px rgba(29, 185, 84, 0.3);
+      }
+      100% {
+        transform: translateY(0);
+        background-color: transparent;
+      }
+    }
+    
+    @keyframes slideDown {
+      0% {
+        transform: translateY(0);
+        background-color: rgba(255, 165, 0, 0.1);
+      }
+      50% {
+        transform: translateY(10px);
+        background-color: rgba(255, 165, 0, 0.3);
+        box-shadow: 0 4px 12px rgba(255, 165, 0, 0.3);
+      }
+      100% {
+        transform: translateY(0);
+        background-color: transparent;
+      }
+    }
+    
+    .queue-item.highlight-new-vote {
+      animation: pulseVote 0.4s ease-in-out;
+    }
+    
+    @keyframes pulseVote {
+      0% {
+        transform: scale(1);
+        background-color: transparent;
+      }
+      50% {
+        transform: scale(1.02);
+        background-color: rgba(29, 185, 84, 0.2);
+      }
+      100% {
+        transform: scale(1);
+        background-color: transparent;
+      }
+    }
+    .role-indicator {
+      background-color: #1db954;
+      color: white;
+      padding: 4px 8px;
+      border-radius: 12px;
+      font-size: 0.8em;
+      font-weight: bold;
+    }
+    
+    #host-restart-btn {
+      background-color: #e74c3c !important;
+      color: white !important;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.9em;
+      font-weight: bold;
+      transition: all 0.3s ease;
+      position: relative;
+      z-index: 100; /* Ensure button is always visible */
+      min-width: 120px;
+    }
+    
+    #host-restart-btn:hover {
+      background-color: #c0392b !important;
+      transform: scale(1.05);    }
+    
+    /* Role Selection Styles */
+    .role-selection {
+      text-align: center;
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 40px 20px;
+    }
+    
+    .role-selection h2 {
+      color: white;
+      margin-bottom: 30px;
+      font-size: 1.5em;
+    }
+    
+    .role-options {
+      display: flex;
+      gap: 20px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    
+    .role-option {
+      flex: 1;
+      min-width: 160px;
+      max-width: 200px;
+    }
+    
+    .role-btn {
+      display: block;
+      padding: 20px 15px;
+      border-radius: 12px;
+      text-decoration: none;
+      border: none;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      font-family: inherit;
+      font-size: 1em;
+      width: 100%;
+      position: relative;
+      overflow: hidden;
+    }
+    
+    .role-btn small {
+      display: block;
+      font-size: 0.8em;
+      margin-top: 8px;
+      opacity: 0.9;
+    }
+    
+    .host-btn {
+      background: linear-gradient(135deg, #1db954 0%, #1ed760 100%);
+      color: white;
+    }
+    
+    .listener-btn {
+      background: linear-gradient(135deg, #2196F3 0%, #21CBF3 100%);
+      color: white;
+    }
+    
+    .guest-btn {
+      background: linear-gradient(135deg, #9C27B0 0%, #E91E63 100%);
+      color: white;
+    }
+    
+    .role-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 25px rgba(0,0,0,0.3);
+    }
+    
+    .host-btn:hover {
+      background: linear-gradient(135deg, #1ed760 0%, #1db954 100%);
+    }
+    
+    .listener-btn:hover {
+      background: linear-gradient(135deg, #21CBF3 0%, #2196F3 100%);
+    }
+    
+    .guest-btn:hover {
+      background: linear-gradient(135deg, #E91E63 0%, #9C27B0 100%);
+    }
+    
+    @media (max-width: 768px) {
+      .role-options {
+        flex-direction: column;
+        align-items: center;
+      }
+      
+      .role-option {
+        width: 100%;
+        max-width: 280px;
+      }
+    }
+
     @media (max-width: 768px) {
       .container {
         grid-template-columns: 1fr;
       }
+      
+      .main-content > div:first-child {
+        flex-direction: column;
+        gap: 10px;
+      }
+      
+      #host-restart-btn {
+        font-size: 0.8em;
+        padding: 6px 12px;
+      }
     }
   </style>
+  <!-- Spotify Web Playback SDK -->
+  <script src="https://sdk.scdn.co/spotify-player.js"></script>
 </head>
 <body>
-  <h1>🎵 BeatSync Mixer</h1>
-
-  <div id="login">
-    <a href="/login">🎵 Connect with Spotify</a>
+  <!-- Spotify Web Player - Fixed at top -->
+  <div id="spotify-player-container">
+    <div id="spotify-embed-wrapper" style="display: none;">
+      <iframe id="spotify-player" 
+              style="border-radius:12px" 
+              src="" 
+              width="100%" 
+              height="152" 
+              frameBorder="0" 
+              allowfullscreen="" 
+              allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" 
+              loading="lazy">
+      </iframe>
+    </div>
+    <div id="full-player">
+      <div class="player-content">
+        <div class="track-info">
+          <div id="album-art">
+            <img id="album-image" src="" alt="Album Art" style="width: 60px; height: 60px; border-radius: 4px; display: none;">
+            <div id="no-track-placeholder" style="width: 60px; height: 60px; background: #333; border-radius: 4px; display: flex; align-items: center; justify-content: center; color: #666;">♪</div>
+          </div>
+          <div class="track-details">
+            <div class="track-name" id="current-track-name">No track playing</div>
+            <div class="track-artist" id="current-track-artist">Connect to start playback</div>
+          </div>
+        </div>
+        
+        <div class="player-controls">
+          <button class="control-btn" id="prev-btn" onclick="previousTrack()" disabled>⏮️</button>
+          <button class="control-btn play-btn" id="play-pause-btn" onclick="togglePlayback()" disabled>▶️</button>
+          <button class="control-btn" id="next-btn" onclick="nextTrack()" disabled>⏭️</button>
+        </div>
+        
+        <div class="progress-section">
+          <div class="progress-bar-container" onclick="seekToPosition(event)">
+            <div class="progress-bar" id="progress-bar">
+              <div class="progress-fill" id="progress-fill"></div>
+            </div>
+          </div>
+          <div class="time-info">
+            <span id="current-time">0:00</span> / <span id="total-time">0:00</span>
+          </div>
+        </div>
+        
+        <div class="volume-section">
+          <span class="volume-icon">🔊</span>
+          <input type="range" class="volume-slider" id="volume-slider" min="0" max="100" value="50" onchange="setVolume(this.value)">
+        </div>
+        
+        <div class="status" id="connection-status">🔴 Disconnected</div>
+      </div>
+    </div>
   </div>
 
-  <div class="container">
-    <div id="playlists" style="display:none;" class="section">
-      <h2>Your Playlists</h2>
-      <ul id="playlist-list"></ul>
+  <!-- Main content area -->
+  <div class="main-content">
+    <div class="header-container">
+      <h1>🎵 BeatSync Mixer</h1>
+      <button id="host-restart-btn" onclick="restartSession()">
+        🔄 Restart Session
+      </button>
     </div>
 
-    <div id="tracks" style="display:none;" class="section">
-      <button id="back-btn" style="margin-bottom:10px;">← Back to Playlists</button>
-      <h2>Playlist Tracks</h2>
-      <ul id="track-list"></ul>
-    </div>
-
-    <div id="queue-section" class="section">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-        <h2>Current Queue</h2>
-        <button id="clear-queue-btn" onclick="clearQueue()" style="background-color: #e74c3c;">Clear Queue</button>
-      </div>
-      <ul id="queue"></ul>
-      <div id="queue-empty" style="display: none; text-align: center; color: #666; padding: 20px;">
-        No tracks in queue. Add some music! 🎵
-      </div>
-    </div>
-
-    <div class="container">
-      <div id="chat-section">
-        <h3>Chat</h3>
-        <div id="chat-messages"></div>
-        <form id="chat-form" onsubmit="sendChatMessage(event)">
-          <input type="text" id="chat-input" placeholder="Type a message..." maxlength="200">
-          <button type="submit">Send</button>
-        </form>
-      </div>
-
-      <div id="playback-section">
-        <h3>Playback Control</h3>
-        <!-- TODO: Integrate Spotify Web Playback SDK -->
-        <p>Web Playback SDK integration coming soon!</p>
-        <button id="play-btn" onclick="playTrack()" disabled>
-          ▶️ Play Current Track
-        </button>
-        <div id="playback-status" style="margin-top: 10px; color: #666;">
-          <small>Connect Spotify Premium account to enable playback</small>
+    <div id="login">
+      <div class="role-selection">
+        <h2>Choose how to join BeatSync Mixer</h2>
+        <div class="role-options">
+          <div class="role-option">
+            <a href="/login?role=host" class="role-btn host-btn">
+              🎵 Host Session
+              <small>Control music, manage playlists</small>
+            </a>
+          </div>
+          <div class="role-option">
+            <button onclick="continueAsGuest()" class="role-btn listener-btn">
+              🎧 Join as Listener
+              <small>Vote, chat, browse - no login required</small>
+            </button>
+          </div>
         </div>
       </div>
+    </div>
+
+    <!-- Side-by-side content grid -->
+    <div class="content-grid">
+      <!-- Left side: Playlists and Tracks -->
+      <div class="section">
+        <div id="playlists" style="display:none;">
+          <h2>Your Playlists</h2>
+          <ul id="playlist-list"></ul>
+        </div>
+
+        <div id="tracks" style="display:none;">
+          <button id="back-btn" style="margin-bottom:10px;">← Back to Playlists</button>
+          <h2>Playlist Tracks</h2>
+          <ul id="track-list"></ul>
+        </div>
+      </div>
+
+      <!-- Right side: Queue -->
+      <div class="section">
+        <div id="queue-section">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+            <h2>Current Queue <small style="font-size: 0.6em; color: #666; font-weight: normal;">(ordered by votes)</small></h2>
+            <button id="clear-queue-btn" onclick="clearQueue()" style="background-color: #e74c3c;">Clear Queue</button>
+          </div>
+          <ul id="queue"></ul>
+          <div id="queue-empty" style="display: none; text-align: center; color: #666; padding: 20px;">
+            No tracks in queue. Add some music! 🎵
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Floating Chat Box -->
+  <div id="floating-chat">
+    <div id="chat-header" onclick="toggleChat()">
+      <span>💬 Chat</span>
+      <button id="chat-toggle">−</button>
+    </div>
+    <div id="chat-content">
+      <div id="chat-messages"></div>
+      <form id="chat-form" onsubmit="sendChatMessage(event)">
+        <input type="text" id="chat-input" placeholder="Type a message..." maxlength="200">
+        <button type="submit">Send</button>
+      </form>
     </div>
   </div>
 
@@ -290,20 +934,566 @@
     let currentUser = 'User_' + Math.random().toString(36).substr(2, 9); // Generate random user ID
     let voteData = {}; // Store vote counts for tracks
 
+    // Spotify Web Playback SDK variables
+    let player = null;
+    let deviceId = null;
+    let currentTrack = null;
+    let isPlaying = false;
+    let accessToken = null;
+    let currentTrackUri = null;
+    let currentPosition = 0;
+    let duration = 0;
+    let progressInterval = null;
+
+    // Track end detection using progress tracking
+    let trackEndCheckInterval = null;
+
+    // Continue as guest function
+    function continueAsGuest() {
+      // Hide the login section
+      const loginDiv = document.getElementById('login');
+      if (loginDiv) {
+        loginDiv.style.display = 'none';
+      }
+      
+      // Set role to listener (no auth required)
+      window.userRole = 'listener';
+      window.userId = 'listener_' + Math.random().toString(36).substr(2, 9);
+      window.displayName = 'Anonymous Listener';
+      
+      console.log('Continuing as anonymous listener:', window.userId);
+      
+      // Initialize listener UI
+      initializeRoleBasedUI();
+      
+      // Load shared playlists for listeners
+      loadPlaylists();
+      loadInitialQueue();
+      
+      // Connect to socket.io for real-time updates
+      console.log('Socket connected for listener');
+    }
+
+    // Initialize Spotify Web Playback SDK
+    window.onSpotifyWebPlaybackSDKReady = () => {
+      initializeSpotifyPlayer();
+    };
+
+    async function initializeSpotifyPlayer() {
+      try {
+        // Get access token from backend
+        const tokenResponse = await fetch('/spotify-token');
+        if (!tokenResponse.ok) {
+          updateConnectionStatus('🔴 Not authenticated');
+          console.log('User not authenticated with Spotify');
+          return;
+        }
+        
+        const tokenData = await tokenResponse.json();
+        accessToken = tokenData.access_token;
+
+        // Initialize the Spotify Player
+        player = new Spotify.Player({
+          name: 'BeatSync Mixer Player',
+          getOAuthToken: cb => { cb(accessToken); },
+          volume: 0.5
+        });
+
+        // Error handling
+        player.addListener('initialization_error', ({ message }) => {
+          console.error('Spotify Player initialization error:', message);
+          updateConnectionStatus('🔴 Initialization error');
+          if (message.includes('Spotify Premium')) {
+            alert('Spotify Premium is required for web playback. Please upgrade your account to use the music player.');
+          }
+        });
+
+        player.addListener('authentication_error', ({ message }) => {
+          console.error('Spotify Player authentication error:', message);
+          updateConnectionStatus('🔴 Authentication error');
+          alert('Authentication error. Please refresh the page and log in again.');
+        });
+
+        player.addListener('account_error', ({ message }) => {
+          console.error('Spotify Player account error:', message);
+          updateConnectionStatus('🔴 Premium required');
+          alert('Spotify Premium is required for web playback. Please upgrade your account.');
+        });
+
+        player.addListener('playback_error', ({ message }) => {
+          console.error('Spotify Player playback error:', message);
+          alert('Playback error: ' + message);
+        });
+
+        // Ready
+        player.addListener('ready', ({ device_id }) => {
+          console.log('Ready with Device ID', device_id);
+          deviceId = device_id;
+          updateConnectionStatus('🟢 Connected');
+          enablePlaybackControls(true);
+          
+          // Transfer playback to this device
+          transferPlaybackToDevice(device_id);
+        });
+
+        // Not Ready
+        player.addListener('not_ready', ({ device_id }) => {
+          console.log('Device ID has gone offline', device_id);
+          updateConnectionStatus('🔴 Disconnected');
+          enablePlaybackControls(false);
+        });
+
+        // Player state changed
+        player.addListener('player_state_changed', (state) => {
+          if (!state) return;
+
+          const previousTrack = currentTrack;
+          const wasPlaying = isPlaying;
+          const previousPosition = currentPosition;
+
+          currentTrack = state.track_window.current_track;
+          isPlaying = !state.paused;
+          currentPosition = state.position;
+          duration = state.duration;
+          
+          // Check if we have a new track playing
+          const newTrackUri = currentTrack ? currentTrack.uri : null;
+          const trackChanged = newTrackUri !== currentTrackUri;
+          
+          if (trackChanged) {
+            // Remove the previous track from queue if it was from our queue
+            if (currentTrackUri && window.userRole === 'host') {
+              removeTrackFromQueue(currentTrackUri);
+            }
+            currentTrackUri = newTrackUri;
+          }
+
+          updateNowPlaying(currentTrack);
+          updatePlayPauseButton(isPlaying);
+          updateProgress(currentPosition, duration);
+          
+          // Improved song end detection
+          const songEnded = wasPlaying && !isPlaying && 
+                           previousPosition > 0 && 
+                           currentPosition === 0 && 
+                           !trackChanged; // Make sure it's actually the end, not a track change
+          
+          // Also check if we're near the end of the track (within last 3 seconds) and stopped
+          const nearEnd = currentPosition > (duration - 3000) && currentPosition > 0;
+          const stoppedNearEnd = wasPlaying && !isPlaying && nearEnd;
+          
+          if ((songEnded || stoppedNearEnd) && window.userRole === 'host') {
+            console.log('Song ended, auto-playing next track...');
+            setTimeout(() => {
+              autoPlayNext();
+            }, 1000);
+          }
+          
+          // Start or stop progress tracking
+          if (isPlaying) {
+            startProgressTracking();
+            startTrackEndDetection(); // Start monitoring for track end
+          } else {
+            stopProgressTracking();
+            stopTrackEndDetection();
+          }
+        });
+
+        // Connect to the player
+        const success = await player.connect();
+        if (success) {
+          console.log('The Web Playback SDK successfully connected to Spotify!');
+        } else {
+          console.error('The Web Playback SDK could not connect to Spotify');
+          updateConnectionStatus('🔴 Connection failed');
+        }
+
+      } catch (error) {
+        console.error('Error initializing Spotify player:', error);
+        updateConnectionStatus('🔴 Initialization failed');
+      }
+    }
+
+    // Transfer playback to the Web Playback SDK device
+    async function transferPlaybackToDevice(deviceId) {
+      try {
+        const response = await fetch('/playback/transfer', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ device_id: deviceId })
+        });
+
+        if (response.ok) {
+          console.log('Successfully transferred playback to web player');
+        } else {
+          const error = await response.json();
+          console.warn('Failed to transfer playback:', error.error);
+        }
+      } catch (error) {
+        console.error('Error transferring playback:', error);
+      }
+    }
+
+    // Progress tracking functions
+    function startProgressTracking() {
+      stopProgressTracking(); // Clear any existing interval
+      progressInterval = setInterval(async () => {
+        if (player && isPlaying) {
+          try {
+            const state = await player.getCurrentState();
+            if (state) {
+              currentPosition = state.position;
+              updateProgress(currentPosition, duration);
+            }
+          } catch (error) {
+            console.error('Error getting current state:', error);
+          }
+        }
+      }, 1000);
+    }
+
+    function stopProgressTracking() {
+      if (progressInterval) {
+        clearInterval(progressInterval);
+        progressInterval = null;
+      }
+    }
+
+    function updateProgress(position, trackDuration) {
+      const progressFill = document.getElementById('progress-fill');
+      const currentTime = document.getElementById('current-time');
+      const totalTime = document.getElementById('total-time');
+      
+      if (progressFill && trackDuration > 0) {
+        const percentage = (position / trackDuration) * 100;
+        progressFill.style.width = percentage + '%';
+      }
+      
+      if (currentTime) {
+        currentTime.textContent = formatTime(position);
+      }
+      
+      if (totalTime) {
+        totalTime.textContent = formatTime(trackDuration);
+      }
+    }
+
+    // Seek to a specific position in the track
+    async function seekToPosition(event) {
+      if (!player || !currentTrack) return;
+      
+      const progressBar = event.currentTarget;
+      const rect = progressBar.getBoundingClientRect();
+      const clickX = event.clientX - rect.left;
+      const width = rect.width;
+      const percentage = clickX / width;
+      const seekPosition = Math.floor(duration * percentage);
+      
+      try {
+        await player.seek(seekPosition);
+        currentPosition = seekPosition;
+        updateProgress(currentPosition, duration);
+      } catch (error) {
+        console.error('Error seeking:', error);
+      }
+    }
+
+    function formatTime(ms) {
+      const minutes = Math.floor(ms / 60000);
+      const seconds = Math.floor((ms % 60000) / 1000);
+      return minutes + ':' + (seconds < 10 ? '0' : '') + seconds;
+    }
+
+    // Playback control functions
+    async function togglePlayback() {
+      if (!player) return;
+      
+      try {
+        await player.togglePlay();
+      } catch (error) {
+        console.error('Error toggling playback:', error);
+      }
+    }
+
+    async function nextTrack() {
+      // Use the auto-play system to get the most liked track
+      await autoPlayNext();
+    }
+
+    async function previousTrack() {
+      // Get previous track from our queue
+      const queueItems = document.querySelectorAll('#queue li');
+      if (queueItems.length === 0) return;
+      
+      // Find currently playing track
+      let currentIndex = -1;
+      for (let i = 0; i < queueItems.length; i++) {
+        const trackUri = queueItems[i].getAttribute('data-track-uri');
+        if (trackUri === currentTrackUri) {
+          currentIndex = i;
+          break;
+        }
+      }
+      
+      // Play previous track in queue
+      const prevIndex = currentIndex - 1;
+      if (prevIndex >= 0) {
+        const prevTrackUri = queueItems[prevIndex].getAttribute('data-track-uri');
+        await playTrackFromQueue(prevTrackUri);
+      } else {
+        console.log('No previous track in queue');
+      }
+    }
+
+    async function setVolume(volume) {
+      if (!player) return;
+      
+      try {
+        await player.setVolume(volume / 100);
+      } catch (error) {
+        console.error('Error setting volume:', error);
+      }
+    }
+
+    // Remove track from queue after it's played
+    async function removeTrackFromQueue(trackUri) {
+      try {
+        const response = await fetch(`/queue/remove/${encodeURIComponent(trackUri)}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        });
+
+        if (response.ok) {
+          console.log('Track removed from queue:', trackUri);
+        } else {
+          console.log('Failed to remove track from queue:', trackUri);
+        }
+      } catch (error) {
+        console.error('Error removing track from queue:', error);
+      }
+    }
+
+    // Auto-play the most liked track (silent operation)
+    async function autoPlayNext() {
+      if (!accessToken || !deviceId) {
+        console.log('Spotify player not connected for auto-play');
+        return;
+      }
+
+      try {
+        const response = await fetch('/queue/auto-play', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ device_id: deviceId })
+        });
+
+        if (response.ok) {
+          const result = await response.json();
+          console.log(`Auto-played: ${result.message}`);
+          
+          // Show a subtle notification in the connection status
+          updateConnectionStatus(`🎵 Auto-playing: ${result.track.track_name}`);
+          setTimeout(() => {
+            updateConnectionStatus('🟢 Connected');
+          }, 3000);
+        } else {
+          const error = await response.json();
+          console.log('No suitable tracks for auto-play:', error.error);
+        }
+      } catch (error) {
+        console.error('Error auto-playing track:', error);
+      }
+    }
+
+    // Play a specific track from the queue
+    async function playTrackFromQueue(trackUri) {
+      if (!accessToken || !deviceId) {
+        alert('Spotify player not connected');
+        return;
+      }
+
+      try {
+        const response = await fetch('/playback/play', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ 
+            track_uri: trackUri,
+            device_id: deviceId 
+          })
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          console.error('Error playing track:', error);
+          
+          // Provide more specific error messages
+          if (response.status === 404) {
+            alert('No active device found. Make sure Spotify is open and try refreshing the page.');
+          } else if (error.error && error.error.includes('Premium')) {
+            alert('Spotify Premium is required for web playback. Please upgrade your account.');
+          } else {
+            alert(error.error || 'Failed to play track');
+          }
+        } else {
+          console.log('Successfully started playback');
+          
+          // Remove the track from queue after successful playback
+          await removeTrackFromQueue(trackUri);
+        }
+      } catch (error) {
+        console.error('Error playing track:', error);
+        alert('Network error. Please check your connection and try again.');
+      }
+    }
+
+    // Track end detection using progress tracking
+    function startTrackEndDetection() {
+      stopTrackEndDetection();
+      
+      trackEndCheckInterval = setInterval(async () => {
+        if (player && isPlaying && currentTrack && duration > 0) {
+          try {
+            const state = await player.getCurrentState();
+            if (state && state.position > (duration - 2000)) { // Within last 2 seconds
+              console.log('Track ending soon, preparing auto-play...');
+              
+              // Schedule auto-play
+              setTimeout(() => {
+                if (window.userRole === 'host') {
+                  console.log('Track ended via time check, auto-playing next...');
+                  autoPlayNext();
+                }
+              }, duration - state.position + 500); // Play next track 500ms after current ends
+              
+              stopTrackEndDetection(); // Stop checking since we've scheduled the next track
+            }
+          } catch (error) {
+            console.error('Error checking track end:', error);
+          }
+        }
+      }, 1000); // Check every second
+    }
+
+    function stopTrackEndDetection() {
+      if (trackEndCheckInterval) {
+        clearInterval(trackEndCheckInterval);
+        trackEndCheckInterval = null;
+      }
+    }
+
+    // UI update functions
+    function updateConnectionStatus(status) {
+      const statusElement = document.getElementById('connection-status');
+      if (statusElement) statusElement.textContent = status;
+    }
+
+    function updateNowPlaying(track) {
+      const trackName = document.getElementById('current-track-name');
+      const trackArtist = document.getElementById('current-track-artist');
+      const albumImage = document.getElementById('album-image');
+      const placeholder = document.getElementById('no-track-placeholder');
+      
+      if (track) {
+        const name = track.name;
+        const artists = track.artists.map(artist => artist.name).join(', ');
+        const imageUrl = track.album.images[0]?.url;
+        
+        if (trackName) trackName.textContent = name;
+        if (trackArtist) trackArtist.textContent = artists;
+        
+        if (imageUrl && albumImage) {
+          albumImage.src = imageUrl;
+          albumImage.style.display = 'block';
+          if (placeholder) placeholder.style.display = 'none';
+        } else {
+          if (albumImage) albumImage.style.display = 'none';
+          if (placeholder) placeholder.style.display = 'flex';
+        }
+      } else {
+        if (trackName) trackName.textContent = 'No track playing';
+        if (trackArtist) trackArtist.textContent = 'Connect to start playback';
+        if (albumImage) albumImage.style.display = 'none';
+        if (placeholder) placeholder.style.display = 'flex';
+      }
+    }
+
+    function updatePlayPauseButton(playing) {
+      const button = document.getElementById('play-pause-btn');
+      if (button) {
+        button.textContent = playing ? '⏸️' : '▶️';
+      }
+    }
+
+    function enablePlaybackControls(enabled) {
+      const playPause = document.getElementById('play-pause-btn');
+      const next = document.getElementById('next-btn');
+      const prev = document.getElementById('prev-btn');
+      const volumeSlider = document.getElementById('volume-slider');
+      
+      if (playPause) playPause.disabled = !enabled;
+      if (next) next.disabled = !enabled;
+      if (prev) prev.disabled = !enabled;
+      if (volumeSlider) volumeSlider.disabled = !enabled;
+    }
+
+    // Restart session function (for hosts)
+    async function restartSession() {
+      if (confirm('⚠️ RESTART SESSION\n\nThis will:\n• Clear all sessions for everyone\n• Remove current host\n• Clear the entire queue\n• Reset all votes\n• Clear all chat messages\n• Force all users to reconnect\n\nAre you sure you want to restart the entire session?')) {
+        try {
+          const response = await fetch('/restart-session', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            }
+          });
+          
+          if (response.ok) {
+            const data = await response.json();
+            alert('✅ ' + data.message + '\n\nRedirecting to start page...');
+            window.location.href = '/';
+          } else {
+            const error = await response.json();
+            alert('❌ Error restarting session: ' + (error.error || 'Unknown error'));
+          }
+        } catch (error) {
+          console.error('Error restarting session:', error);
+          alert('❌ Network error while restarting session. Please try again.');
+        }
+      }
+    }
+
     socket.on("queue_updated", data => {
       const li = document.createElement("li");
       const trackId = data.track_uri;
       const safeTrackId = trackId.replace(/[^a-zA-Z0-9]/g, '_');
+      const timestamp = new Date(data.timestamp || Date.now()).getTime();
+      
       li.setAttribute('data-track-uri', trackId);
+      li.setAttribute('data-timestamp', timestamp);
+      li.className = 'queue-item';
+      li.style.position = 'relative';
       li.innerHTML = `
+        <span class="position-indicator" style="position: absolute; top: 5px; left: 5px; background: rgba(0,0,0,0.7); color: white; padding: 2px 6px; border-radius: 10px; font-size: 10px; font-weight: bold;">#${queueCount + 1}</span>
         <div>
-          <span>${data.track_name || data.track_uri}</span>
-          <small>Added: ${new Date(data.timestamp || Date.now()).toLocaleTimeString()}</small>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <span style="font-weight: bold;">${data.track_name || data.track_uri}</span>
+            <span class="vote-score" id="score-${safeTrackId}" style="background-color: #333; padding: 2px 8px; border-radius: 12px; font-size: 12px; color: #1db954;">Score: 0</span>
+          </div>
+          <small style="color: #666;">Added: ${new Date(data.timestamp || Date.now()).toLocaleTimeString()}</small>
           <div class="vote-buttons">
-            <button class="vote-btn" onclick="voteTrack('${trackId}', 'up')">👍</button>
+            <button class="vote-btn" onclick="voteTrack('${trackId}', 'up', this)">👍</button>
             <span class="vote-count" id="up-${safeTrackId}">0</span>
-            <button class="vote-btn" onclick="voteTrack('${trackId}', 'down')">👎</button>
+            <button class="vote-btn" onclick="voteTrack('${trackId}', 'down', this)">👎</button>
             <span class="vote-count" id="down-${safeTrackId}">0</span>
+            ${window.userRole === 'host' ? `<button onclick="playTrackFromQueue('${trackId}')" style="background-color: #1db954; margin: 0 5px;">▶️ Play</button>` : ''}
             <button class="recommendations-btn" onclick="loadRecs('${trackId}', '${safeTrackId}')">See Similar Tracks</button>
           </div>
           <div id="recs-${safeTrackId}" class="recommendations-list"></div>
@@ -312,6 +1502,11 @@
       document.getElementById("queue").appendChild(li);
       queueCount++;
       updateQueueDisplay();
+      
+      // Initialize vote data for this track if not exists
+      if (!voteData[trackId]) {
+        voteData[trackId] = { up: 0, down: 0 };
+      }
     });
 
     socket.on("queue_cleared", () => {
@@ -321,19 +1516,99 @@
       updateQueueDisplay();
     });
 
+    socket.on("votes_cleared", () => {
+      // Reset all vote displays to 0
+      voteData = {};
+      document.querySelectorAll('.vote-count').forEach(element => {
+        element.textContent = '0';
+      });
+    });
+
+    socket.on("chat_cleared", () => {
+      document.getElementById("chat-messages").innerHTML = '';
+    });
+
+    socket.on("session_restarted", () => {
+      // Reset player state
+      currentTrack = null;
+      isPlaying = false;
+      currentTrackUri = null;
+      currentPosition = 0;
+      duration = 0;
+      
+      // Update UI
+      updateNowPlaying(null);
+      updatePlayPauseButton(false);
+      updateProgress(0, 0);
+      updateConnectionStatus('🔴 Session Restarted');
+      
+      // Stop progress tracking
+      stopProgressTracking();
+      
+      // Show notification
+      alert('Session has been restarted. All data cleared. Please refresh if needed.');
+    });
+
+    socket.on("track_removed", (data) => {
+      // Remove the track from the queue UI
+      const trackElement = document.querySelector(`li[data-track-uri="${data.track_uri}"]`);
+      if (trackElement) {
+        trackElement.remove();
+        queueCount--;
+        updateQueueDisplay();
+        console.log(`Removed from queue: ${data.track_name}`);
+      }
+    });
+
     socket.on("vote_updated", data => {
       const trackId = data.track_uri;
       const safeId = trackId.replace(/[^a-zA-Z0-9]/g, '_');
       const upElement = document.getElementById(`up-${safeId}`);
       const downElement = document.getElementById(`down-${safeId}`);
+      const scoreElement = document.getElementById(`score-${safeId}`);
       
       if (upElement) upElement.textContent = data.up_votes;
       if (downElement) downElement.textContent = data.down_votes;
+      
+      // Update score display with enhanced styling
+      const netScore = data.up_votes - data.down_votes;
+      if (scoreElement) {
+        scoreElement.textContent = `Score: ${netScore >= 0 ? '+' : ''}${netScore}`;
+        
+        // Color code the score with background
+        if (netScore > 0) {
+          scoreElement.style.color = '#1db954'; // Green for positive
+          scoreElement.style.backgroundColor = 'rgba(29, 185, 84, 0.1)';
+        } else if (netScore < 0) {
+          scoreElement.style.color = '#e74c3c'; // Red for negative
+          scoreElement.style.backgroundColor = 'rgba(231, 76, 60, 0.1)';
+        } else {
+          scoreElement.style.color = '#666'; // Gray for neutral
+          scoreElement.style.backgroundColor = '#333';
+        }
+      }
+      
+      // Add pulse animation to the voted track
+      const trackElement = document.querySelector(`li[data-track-uri="${trackId}"]`);
+      if (trackElement) {
+        trackElement.classList.remove('highlight-new-vote');
+        // Force reflow to restart animation
+        trackElement.offsetHeight;
+        trackElement.classList.add('highlight-new-vote');
+        
+        // Remove the highlight after animation
+        setTimeout(() => {
+          trackElement.classList.remove('highlight-new-vote');
+        }, 400);
+      }
       
       voteData[trackId] = {
         up: data.up_votes,
         down: data.down_votes
       };
+      
+      // Reorder the queue based on updated votes
+      reorderQueueByVotes();
     });
 
     socket.on("chat_message", data => {
@@ -349,7 +1624,20 @@
       chatMessages.scrollTop = chatMessages.scrollHeight;
     });
 
-    function voteTrack(trackUri, voteType) {
+    function voteTrack(trackUri, voteType, buttonElement) {
+      // Add visual feedback to the clicked button
+      if (buttonElement) {
+        buttonElement.classList.remove('just-voted');
+        // Force reflow to restart animation
+        buttonElement.offsetHeight;
+        buttonElement.classList.add('just-voted');
+        
+        // Remove the animation class after it completes
+        setTimeout(() => {
+          buttonElement.classList.remove('just-voted');
+        }, 300);
+      }
+      
       socket.emit('vote_add', {
         track_uri: trackUri,
         vote: voteType,
@@ -373,6 +1661,13 @@
       }
     }
 
+    function toggleChat() {
+      const chatBox = document.getElementById('floating-chat');
+      const toggleBtn = document.getElementById('chat-toggle');
+      
+      chatBox.classList.toggle('minimized');
+      toggleBtn.textContent = chatBox.classList.contains('minimized') ? '+' : '−';
+    }
     function playTrack() {
       // TODO: Implement Spotify Web Playback SDK integration
       // This will require:
@@ -396,6 +1691,122 @@
       }
     }
 
+    function reorderQueueByVotes() {
+      const queueContainer = document.getElementById("queue");
+      const queueItems = Array.from(queueContainer.children);
+      
+      // Store original positions
+      const originalPositions = new Map();
+      queueItems.forEach((item, index) => {
+        const trackUri = item.getAttribute('data-track-uri');
+        originalPositions.set(trackUri, index);
+      });
+      
+      // Sort queue items by vote score (up votes - down votes), then by timestamp
+      queueItems.sort((a, b) => {
+        const trackUriA = a.getAttribute('data-track-uri');
+        const trackUriB = b.getAttribute('data-track-uri');
+        
+        const votesA = voteData[trackUriA] || { up: 0, down: 0 };
+        const votesB = voteData[trackUriB] || { up: 0, down: 0 };
+        
+        const scoreA = votesA.up - votesA.down;
+        const scoreB = votesB.up - votesB.down;
+        
+        // Sort by score (descending), then by timestamp (ascending) for tie-breaking
+        if (scoreB !== scoreA) {
+          return scoreB - scoreA; // Higher score first
+        }
+        
+        // If scores are equal, maintain original order (timestamp)
+        const timestampA = a.getAttribute('data-timestamp') || 0;
+        const timestampB = b.getAttribute('data-timestamp') || 0;
+        return timestampA - timestampB;
+      });
+      
+      // Calculate new positions and determine movement direction
+      const movements = new Map();
+      queueItems.forEach((item, newIndex) => {
+        const trackUri = item.getAttribute('data-track-uri');
+        const oldIndex = originalPositions.get(trackUri);
+        
+        if (oldIndex !== newIndex) {
+          if (newIndex < oldIndex) {
+            movements.set(trackUri, 'up');
+          } else {
+            movements.set(trackUri, 'down');
+          }
+        }
+      });
+      
+      // Apply movement animations before reordering
+      queueItems.forEach((item) => {
+        const trackUri = item.getAttribute('data-track-uri');
+        const movement = movements.get(trackUri);
+        
+        // Remove any existing animation classes
+        item.classList.remove('moving-up', 'moving-down', 'highlight-new-vote');
+        
+        if (movement === 'up') {
+          item.classList.add('moving-up');
+        } else if (movement === 'down') {
+          item.classList.add('moving-down');
+        }
+      });
+      
+      // Wait a brief moment for animations to start, then reorder
+      setTimeout(() => {
+        // Clear the queue container and re-append in new order
+        queueContainer.innerHTML = '';
+        queueItems.forEach((item, index) => {
+          // Add class name for styling
+          item.className = 'queue-item';
+          
+          // Add position indicator
+          const positionIndicator = item.querySelector('.position-indicator');
+          if (positionIndicator) {
+            positionIndicator.textContent = `#${index + 1}`;
+          } else {
+            // Create position indicator if it doesn't exist
+            const indicator = document.createElement('span');
+            indicator.className = 'position-indicator';
+            indicator.style.cssText = 'position: absolute; top: 5px; left: 5px; background: rgba(0,0,0,0.7); color: white; padding: 2px 6px; border-radius: 10px; font-size: 10px; font-weight: bold;';
+            indicator.textContent = `#${index + 1}`;
+            item.style.position = 'relative';
+            item.appendChild(indicator);
+          }
+          
+          // Highlight the first track (next to play)
+          if (index === 0) {
+            item.classList.add('next-to-play');
+          } else {
+            item.classList.remove('next-to-play');
+          }
+          
+          // Re-apply movement animations if they were active
+          const trackUri = item.getAttribute('data-track-uri');
+          const movement = movements.get(trackUri);
+          if (movement === 'up') {
+            item.classList.add('moving-up');
+          } else if (movement === 'down') {
+            item.classList.add('moving-down');
+          }
+          
+          queueContainer.appendChild(item);
+        });
+        
+        // Clean up animation classes after animation completes
+        setTimeout(() => {
+          queueItems.forEach((item) => {
+            item.classList.remove('moving-up', 'moving-down');
+          });
+        }, 600);
+        
+      }, 50);
+      
+      console.log('Queue reordered by votes with animations');
+    }
+
     async function clearQueue() {
       if (confirm('Are you sure you want to clear the entire queue?')) {
         try {
@@ -416,26 +1827,99 @@
       try {
         const res = await fetch('/playlists');
         if (res.redirected) {
+          // For listeners, show guest mode instead of redirecting to login
+          if (window.userRole === 'listener') {
+            showSharedPlaylistsMessage();
+            return;
+          }
           document.getElementById('login').style.display = 'block';
           return;
         }
         const data = await res.json();
         document.getElementById('login').style.display = 'none';
         document.getElementById('playlists').style.display = 'block';
+        
+        // Update the playlist section title based on user role
+        const playlistsTitle = document.querySelector('#playlists h2');
+        if (window.userRole === 'listener') {
+          playlistsTitle.textContent = '🎵 Host\'s Shared Playlists';
+        } else {
+          playlistsTitle.textContent = 'Your Playlists';
+        }
+        
         const ul = document.getElementById('playlist-list');
         ul.innerHTML = ''; // Clear existing playlists
+        
+        // Show message if listener mode and no playlists
+        if (window.userRole === 'listener' && data.items.length === 0) {
+          showSharedPlaylistsMessage();
+          return;
+        }
+        
         data.items.forEach(pl => {
           const li = document.createElement('li');
           li.innerHTML = `
             <span>${pl.name}</span>
-            <small>${pl.tracks.total} tracks</small>
+            <small>${pl.tracks ? pl.tracks.total : 'Unknown'} tracks</small>
+            ${window.userRole === 'listener' ? '<small style="color: #2196F3;">👤 Shared by Host</small>' : ''}
           `;
           li.onclick = () => loadPlaylistTracks(pl.id);
           ul.appendChild(li);
         });
+        
+        // Add listener mode info message
+        if (window.userRole === 'listener' && data.items.length > 0) {
+          const infoDiv = document.createElement('div');
+          infoDiv.style.cssText = `
+            background: rgba(33, 150, 243, 0.1);
+            padding: 10px;
+            border-radius: 6px;
+            margin: 15px 0;
+            font-size: 0.85em;
+            color: #ccc;
+            text-align: center;
+          `;
+          infoDiv.innerHTML = '💡 These are playlists shared by the current host. Click to explore!';
+          ul.appendChild(infoDiv);
+        }
+        
       } catch (err) {
         console.error('Error loading playlists:', err);
+        // Show error message
+        const ul = document.getElementById('playlist-list');
+        ul.innerHTML = `
+          <div style="text-align: center; padding: 20px; color: #e74c3c;">
+            <div style="font-size: 2em; margin-bottom: 10px;">❌</div>
+            Error loading playlists. Please try again later.
+          </div>
+        `;
       }
+    }
+
+    function showSharedPlaylistsMessage() {
+      document.getElementById('login').style.display = 'none';
+      document.getElementById('playlists').style.display = 'block';
+      
+      const playlistsTitle = document.querySelector('#playlists h2');
+      playlistsTitle.textContent = '🎵 Host\'s Shared Playlists';
+      
+      const ul = document.getElementById('playlist-list');
+      const messageDiv = document.createElement('div');
+      messageDiv.style.cssText = `
+        text-align: center;
+        padding: 20px;
+        color: #666;
+        font-style: italic;
+        border: 2px dashed #444;
+        border-radius: 8px;
+        margin: 20px 0;
+      `;
+      messageDiv.innerHTML = `
+        <div style="font-size: 2em; margin-bottom: 10px;">🎵</div>
+        No playlists shared yet<br><br>
+        <small>When a host connects and browses their playlists, they'll appear here for you to explore!</small>
+      `;
+      ul.appendChild(messageDiv);
     }
 
     function queueTrack(trackUri, trackName) {
@@ -449,15 +1933,36 @@
       try {
         const res = await fetch(`/playlists/${playlistId}/tracks`);
         if (res.redirected) {
+          // For listeners, handle as guest mode
+          if (window.userRole === 'listener') {
+            showNoTracksMessage('Tracks not available yet');
+            return;
+          }
           window.location = res.url;
           return;
         }
         const data = await res.json();
         document.getElementById('playlists').style.display = 'none';
         document.getElementById('tracks').style.display = 'block';
+        
+        // Update tracks section title
+        const tracksTitle = document.querySelector('#tracks h2');
+        if (window.userRole === 'listener') {
+          tracksTitle.textContent = '🎵 Playlist Tracks (Shared by Host)';
+        } else {
+          tracksTitle.textContent = 'Playlist Tracks';
+        }
+        
         const ul = document.getElementById('track-list');
         ul.innerHTML = '';
 
+        // Handle listener mode with no tracks
+        if (window.userRole === 'listener' && data.items.length === 0) {
+          showNoTracksMessage('No tracks cached yet');
+          return;
+        }
+
+        // Display tracks
         data.items.forEach(item => {
           const t = item.track;
           if (t && t.name) { // Check if track exists (some tracks can be null)
@@ -466,34 +1971,98 @@
               <div>
                 <strong>${t.name}</strong><br>
                 <small>${t.artists.map(a => a.name).join(', ')}</small>
+                ${window.userRole === 'listener' ? '<small style="color: #2196F3; font-size: 0.7em;">👤 Shared by Host</small>' : ''}
               </div>
             `;
-            const btn = document.createElement('button');
-            btn.textContent = 'Add to Queue';
-            btn.onclick = () => queueTrack(t.uri, `${t.name} - ${t.artists.map(a => a.name).join(', ')}`);
             
-            // Only show Add to Queue button for hosts
+            // Show appropriate button based on role
             if (window.userRole === 'host') {
+              const btn = document.createElement('button');
+              btn.textContent = 'Add to Queue';
+              btn.onclick = () => queueTrack(t.uri, `${t.name} - ${t.artists.map(a => a.name).join(', ')}`);
               li.appendChild(btn);
-            } else {
-              // Show disabled button with explanation for listeners
-              btn.disabled = true;
-              btn.textContent = 'Host Only';
-              btn.style.opacity = '0.5';
-              li.appendChild(btn);
+            } else if (window.userRole === 'listener') {
+              // Listeners get a message about voting instead
+              const listenerMsg = document.createElement('small');
+              listenerMsg.style.cssText = 'color: #2196F3; font-style: italic; margin-left: 10px;';
+              listenerMsg.textContent = '(Vote on queued tracks!)';
+              li.appendChild(listenerMsg);
             }
             
             ul.appendChild(li);
           }
         });
+        
+        // Add info for listener mode
+        if (window.userRole === 'listener' && data.items.length > 0) {
+          const infoDiv = document.createElement('div');
+          infoDiv.style.cssText = `
+            background: rgba(33, 150, 243, 0.1);
+            padding: 12px;
+            border-radius: 6px;
+            margin: 15px 0;
+            font-size: 0.85em;
+            color: #ccc;
+            text-align: center;
+          `;
+          infoDiv.innerHTML = `
+            💡 <strong>Listener Mode:</strong> You can see tracks but can't add them to the queue.<br>
+            Head to the queue section to vote on tracks that are already queued!
+          `;
+          ul.appendChild(infoDiv);
+        }
+        
       } catch (err) {
         console.error('Error loading playlist tracks:', err);
+        showNoTracksMessage('Error loading tracks. Please try again later.');
       }
+    }
+
+    function showNoTracksMessage(message) {
+      document.getElementById('playlists').style.display = 'none';
+      document.getElementById('tracks').style.display = 'block';
+      
+      const tracksTitle = document.querySelector('#tracks h2');
+      tracksTitle.textContent = '🎵 Playlist Tracks (Shared by Host)';
+      
+      const ul = document.getElementById('track-list');
+      const messageDiv = document.createElement('div');
+      messageDiv.style.cssText = `
+        text-align: center;
+        padding: 30px 20px;
+        color: #666;
+        border: 2px dashed #444;
+        border-radius: 8px;
+        margin: 20px 0;
+      `;
+      messageDiv.innerHTML = `
+        <div style="font-size: 2.5em; margin-bottom: 15px;">🎵</div>
+        <strong>${message}</strong><br><br>
+        <small style="color: #999;">
+          The host needs to browse this playlist first to cache the tracks for listeners.<br>
+          You can still vote on tracks that are already in the queue!
+        </small><br><br>
+        <button onclick="loadPlaylists()" style="
+          background: linear-gradient(135deg, #2196F3, #21CBF3);
+          color: white;
+          border: none;
+          padding: 8px 16px;
+          border-radius: 6px;
+          cursor: pointer;
+          margin-top: 10px;
+        ">← Back to Playlists</button>
+      `;
+      ul.appendChild(messageDiv);
     }
 
     window.onload = function() {
       loadPlaylists();
       loadInitialQueue();
+      
+      // Initialize role-based UI
+      console.log('Page loaded, initializing role-based UI...');
+      initializeRoleBasedUI();
+      
       document.getElementById('back-btn').onclick = function() {
         document.getElementById('tracks').style.display = 'none';
         document.getElementById('playlists').style.display = 'block';
@@ -513,7 +2082,7 @@
       }
     }
 
-    // Load Last.fm recommendations for a track
+    // Load recommendations for a track
     async function loadRecs(trackUri, safeTrackId) {
       const recsContainer = document.getElementById(`recs-${safeTrackId}`);
       const btn = event.target;
@@ -540,13 +2109,15 @@
         const recommendations = data.recommendations || [];
         
         if (recommendations.length === 0) {
-          recsContainer.innerHTML = '<div class="recommendation-item">No similar tracks found.</div>';
+          const message = data.message || 'No similar tracks found.';
+          recsContainer.innerHTML = `<div class="recommendation-item" style="color: #666; font-style: italic;">${message}</div>`;
         } else {
           recsContainer.innerHTML = recommendations.map(rec => `
             <div class="recommendation-item">
               <a href="${rec.url}" target="_blank" class="recommendation-link">
-                ${rec.artist} — ${rec.title}
+                <strong>${rec.artist}</strong> — ${rec.title}
               </a>
+              ${rec.source ? `<small style="color: #666; margin-left: 10px; font-size: 10px;">(${rec.source})</small>` : ''}
             </div>
           `).join('');
         }
@@ -566,41 +2137,70 @@
 
     // Role-based UI initialization
     function initializeRoleBasedUI() {
-      const role = window.userRole || 'guest';
+      const role = window.userRole || 'listener';
       console.log('Initializing UI for role:', role);
       
       // Update UI based on role
-      if (role === 'guest') {
-        // Hide login-required features for guests
-        document.getElementById('queue-section').style.display = 'none';
-        document.getElementById('chat-section').style.display = 'none';
-        document.getElementById('playback-section').style.display = 'none';
+      if (role === 'listener') {
+        // Listeners are anonymous users who can vote and chat
+        console.log('Setting up listener UI - can vote and chat anonymously');
         
-        // Show login prompt
+        // Hide login section for listeners
         const loginDiv = document.getElementById('login');
         if (loginDiv) {
-          loginDiv.style.display = 'block';
+          loginDiv.style.display = 'none';
         }
-      } else if (role === 'listener') {
+        
+        // Show all interactive features for listeners
+        document.getElementById('queue-section').style.display = 'block';
+        document.getElementById('floating-chat').style.display = 'block';
+        
         // Hide host-only controls for listeners
         const clearQueueBtn = document.getElementById('clear-queue-btn');
         if (clearQueueBtn) {
           clearQueueBtn.style.display = 'none';
         }
         
-        // Hide login section
+        // Hide restart button for listeners
+        const restartBtn = document.getElementById('host-restart-btn');
+        if (restartBtn) {
+          restartBtn.style.display = 'none';
+        }
+        
+        // Hide playback controls for listeners (they can only view what's playing)
+        const playbackControls = document.getElementById('playback-controls');
+        if (playbackControls) {
+          playbackControls.style.display = 'none';
+        }
+        
+        const volumeControl = document.getElementById('volume-control');
+        if (volumeControl) {
+          volumeControl.style.display = 'none';
+        }
+        
+        // Show role indicator for listeners
+        addRoleIndicator('listener');
+        
+        // Add listener welcome message
+        addListenerWelcomeMessage();
+        
+      } else if (role === 'host') {
+        // Show all controls for hosts
+        console.log('Setting up host UI - restart button should be visible');
+        
         const loginDiv = document.getElementById('login');
         if (loginDiv) {
           loginDiv.style.display = 'none';
         }
         
-        // Show role indicator
-        addRoleIndicator('listener');
-      } else if (role === 'host') {
-        // Show all controls for hosts
-        const loginDiv = document.getElementById('login');
-        if (loginDiv) {
-          loginDiv.style.display = 'none';
+        // Ensure restart button is visible for hosts
+        const restartBtn = document.getElementById('host-restart-btn');
+        if (restartBtn) {
+          console.log('Restart button found, ensuring visibility');
+          restartBtn.style.display = 'inline-block';
+          restartBtn.style.visibility = 'visible';
+        } else {
+          console.error('Restart button not found!');
         }
         
         // Show role indicator
@@ -623,32 +2223,133 @@
           nameSpan.style.cssText = 'font-size: 0.7em; color: #666; margin-top: 5px;';
           nameSpan.textContent = `Welcome, ${window.displayName}!`;
           h1.appendChild(nameSpan);
+          
+          // Add sign-out button for hosts
+          if (role === 'host') {
+            const signOutBtn = document.createElement('button');
+            signOutBtn.textContent = '🚪 Sign Out as Host';
+            signOutBtn.style.cssText = `
+              font-size: 0.5em; 
+              background: #e74c3c; 
+              color: white; 
+              border: none; 
+              padding: 8px 12px; 
+              border-radius: 4px; 
+              margin-left: 10px; 
+              cursor: pointer;
+              transition: background-color 0.3s;
+            `;
+            signOutBtn.onmouseover = () => signOutBtn.style.backgroundColor = '#c0392b';
+            signOutBtn.onmouseout = () => signOutBtn.style.backgroundColor = '#e74c3c';
+            signOutBtn.onclick = signOutAsHost;
+            nameSpan.appendChild(signOutBtn);
+          }
         }
       }
     }
 
-    // Override queueTrack function to check role
-    const originalQueueTrack = window.queueTrack;
-    window.queueTrack = function(trackUri, trackName) {
-      if (window.userRole !== 'host') {
-        alert('Only hosts can add tracks to the queue');
-        return;
+    function addListenerWelcomeMessage() {
+      const h1 = document.querySelector('h1');
+      if (h1 && !document.querySelector('.listener-welcome')) {
+        const welcomeDiv = document.createElement('div');
+        welcomeDiv.className = 'listener-welcome';
+        welcomeDiv.style.cssText = `
+          background: linear-gradient(135deg, rgba(33, 150, 243, 0.1), rgba(33, 203, 243, 0.1));
+          padding: 20px;
+          border-radius: 12px;
+          margin: 20px 0;
+          border: 1px solid rgba(33, 150, 243, 0.3);
+          font-size: 0.95em;
+          color: white;
+          box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        `;
+        welcomeDiv.innerHTML = `
+          <div style="text-align: center;">
+            <strong style="font-size: 1.1em;">🎧 Welcome, Anonymous Listener!</strong><br><br>
+            <div style="display: flex; justify-content: space-around; flex-wrap: wrap; gap: 15px; margin: 15px 0;">
+              <div style="flex: 1; min-width: 120px; text-align: center;">
+                <div style="font-size: 1.5em; margin-bottom: 5px;">🗳️</div>
+                <strong>Vote on Tracks</strong><br>
+                <small style="color: #ccc;">Help decide what plays next</small>
+              </div>
+              <div style="flex: 1; min-width: 120px; text-align: center;">
+                <div style="font-size: 1.5em; margin-bottom: 5px;">💬</div>
+                <strong>Chat Anonymously</strong><br>
+                <small style="color: #ccc;">Talk with other listeners</small>
+              </div>
+              <div style="flex: 1; min-width: 120px; text-align: center;">
+                <div style="font-size: 1.5em; margin-bottom: 5px;">🎵</div>
+                <strong>Browse Host Playlists</strong><br>
+                <small style="color: #ccc;">See what's available</small>
+              </div>
+            </div>
+            <small style="color: #ccc; font-style: italic;">
+              No sign-up required! To host your own session, <a href="javascript:void(0)" onclick="location.reload()" style="color: #21CBF3; text-decoration: underline;">click here</a> to go back.
+            </small>
+          </div>
+        `;
+        
+        // Insert after the h1
+        h1.parentNode.insertBefore(welcomeDiv, h1.nextSibling);
       }
-      originalQueueTrack(trackUri, trackName);
-    };
+    }
 
-    // Override clearQueue function to check role
-    const originalClearQueue = window.clearQueue;
-    window.clearQueue = function() {
-      if (window.userRole !== 'host') {
-        alert('Only hosts can clear the queue');
-        return;
+    // Sign out as host function
+    async function signOutAsHost() {
+      if (confirm('Are you sure you want to sign out as host? This will end the session for everyone.')) {
+        try {
+          const response = await fetch('/sign-out-host', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            }
+          });
+          
+          if (response.ok) {
+            alert('You have been signed out as host. Redirecting to role selection...');
+            window.location.href = '/select-role';
+          } else {
+            alert('Error signing out. Please try again.');
+          }
+        } catch (error) {
+          console.error('Error signing out:', error);
+          alert('Error signing out. Please try again.');
+        }
       }
-      originalClearQueue();
-    };
+    }
 
-    // Initialize role-based UI when page loads
-    document.addEventListener('DOMContentLoaded', initializeRoleBasedUI);
+    // Debug function to check player state
+    async function debugPlayerState() {
+      console.log('=== SPOTIFY PLAYER DEBUG ===');
+      console.log('Access Token:', accessToken ? 'Present' : 'Missing');
+      console.log('Device ID:', deviceId || 'Missing');
+      console.log('Player Object:', player ? 'Present' : 'Missing');
+      
+      if (player) {
+        try {
+          const state = await player.getCurrentState();
+          console.log('Player State:', state);
+        } catch (error) {
+          console.log('Error getting player state:', error);
+        }
+      }
+      
+      // Check available devices
+      try {
+        const response = await fetch('/playback/devices');
+        const devices = await response.json();
+        console.log('Available Devices:', devices);
+      } catch (error) {
+        console.log('Error getting devices:', error);
+      }
+      
+      console.log('=== END DEBUG ===');
+    }
+
+    // Add debug button to console (for development)
+    window.debugPlayer = debugPlayerState;
+
+    // Transfer playback to the Web Playback SDK device
   </script>
 </body>
 </html>
