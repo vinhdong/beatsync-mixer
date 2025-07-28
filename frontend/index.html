@@ -949,29 +949,52 @@
     let trackEndCheckInterval = null;
 
     // Continue as guest function
-    function continueAsGuest() {
-      // Hide the login section
-      const loginDiv = document.getElementById('login');
-      if (loginDiv) {
-        loginDiv.style.display = 'none';
+    async function continueAsGuest() {
+      try {
+        // Call backend to set listener role
+        const response = await fetch('/set-listener', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        if (!response.ok) {
+          console.error('Failed to set listener role');
+          alert('Error joining as listener. Please try again.');
+          return;
+        }
+        
+        const data = await response.json();
+        console.log('Successfully set as listener:', data);
+        
+        // Hide the login section
+        const loginDiv = document.getElementById('login');
+        if (loginDiv) {
+          loginDiv.style.display = 'none';
+        }
+        
+        // Set role from backend response
+        window.userRole = data.role;
+        window.userId = data.user_id;
+        window.displayName = data.display_name;
+        
+        console.log('Continuing as anonymous listener:', window.userId);
+        
+        // Initialize listener UI
+        initializeRoleBasedUI();
+        
+        // Load shared playlists for listeners
+        loadPlaylists();
+        loadInitialQueue();
+        
+        // Connect to socket.io for real-time updates
+        console.log('Socket connected for listener');
+        
+      } catch (error) {
+        console.error('Error setting listener role:', error);
+        alert('Error joining as listener. Please try again.');
       }
-      
-      // Set role to listener (no auth required)
-      window.userRole = 'listener';
-      window.userId = 'listener_' + Math.random().toString(36).substr(2, 9);
-      window.displayName = 'Anonymous Listener';
-      
-      console.log('Continuing as anonymous listener:', window.userId);
-      
-      // Initialize listener UI
-      initializeRoleBasedUI();
-      
-      // Load shared playlists for listeners
-      loadPlaylists();
-      loadInitialQueue();
-      
-      // Connect to socket.io for real-time updates
-      console.log('Socket connected for listener');
     }
 
     // Initialize Spotify Web Playback SDK
@@ -1835,7 +1858,19 @@
           document.getElementById('login').style.display = 'block';
           return;
         }
+        
         const data = await res.json();
+        
+        // Check if there's an error in the response (for listeners when no host)
+        if (data.error) {
+          if (window.userRole === 'listener') {
+            showSharedPlaylistsMessage();
+            return;
+          } else {
+            throw new Error(data.error);
+          }
+        }
+        
         document.getElementById('login').style.display = 'none';
         document.getElementById('playlists').style.display = 'block';
         
@@ -1850,13 +1885,16 @@
         const ul = document.getElementById('playlist-list');
         ul.innerHTML = ''; // Clear existing playlists
         
+        // Handle case where data.items might not exist or be empty
+        const playlists = data.items || [];
+        
         // Show message if listener mode and no playlists
-        if (window.userRole === 'listener' && data.items.length === 0) {
+        if (window.userRole === 'listener' && playlists.length === 0) {
           showSharedPlaylistsMessage();
           return;
         }
         
-        data.items.forEach(pl => {
+        playlists.forEach(pl => {
           const li = document.createElement('li');
           li.innerHTML = `
             <span>${pl.name}</span>
@@ -1868,7 +1906,7 @@
         });
         
         // Add listener mode info message
-        if (window.userRole === 'listener' && data.items.length > 0) {
+        if (window.userRole === 'listener' && playlists.length > 0) {
           const infoDiv = document.createElement('div');
           infoDiv.style.cssText = `
             background: rgba(33, 150, 243, 0.1);
@@ -1885,14 +1923,20 @@
         
       } catch (err) {
         console.error('Error loading playlists:', err);
-        // Show error message
-        const ul = document.getElementById('playlist-list');
-        ul.innerHTML = `
-          <div style="text-align: center; padding: 20px; color: #e74c3c;">
-            <div style="font-size: 2em; margin-bottom: 10px;">❌</div>
-            Error loading playlists. Please try again later.
-          </div>
-        `;
+        
+        // For listeners, if there's an error, show the shared playlists message
+        if (window.userRole === 'listener') {
+          showSharedPlaylistsMessage();
+        } else {
+          // Show error message for hosts
+          const ul = document.getElementById('playlist-list');
+          ul.innerHTML = `
+            <div style="text-align: center; padding: 20px; color: #e74c3c;">
+              <div style="font-size: 2em; margin-bottom: 10px;">❌</div>
+              Error loading playlists. Please try again later.
+            </div>
+          `;
+        }
       }
     }
 
@@ -1941,7 +1985,19 @@
           window.location = res.url;
           return;
         }
+        
         const data = await res.json();
+        
+        // Check if there's an error in the response (for listeners when no host)
+        if (data.error) {
+          if (window.userRole === 'listener') {
+            showNoTracksMessage('Tracks not available yet');
+            return;
+          } else {
+            throw new Error(data.error);
+          }
+        }
+        
         document.getElementById('playlists').style.display = 'none';
         document.getElementById('tracks').style.display = 'block';
         
@@ -1956,14 +2012,17 @@
         const ul = document.getElementById('track-list');
         ul.innerHTML = '';
 
+        // Handle case where data.items might not exist or be empty
+        const tracks = data.items || [];
+
         // Handle listener mode with no tracks
-        if (window.userRole === 'listener' && data.items.length === 0) {
+        if (window.userRole === 'listener' && tracks.length === 0) {
           showNoTracksMessage('No tracks cached yet');
           return;
         }
 
         // Display tracks
-        data.items.forEach(item => {
+        tracks.forEach(item => {
           const t = item.track;
           if (t && t.name) { // Check if track exists (some tracks can be null)
             const li = document.createElement('li');
@@ -1994,7 +2053,7 @@
         });
         
         // Add info for listener mode
-        if (window.userRole === 'listener' && data.items.length > 0) {
+        if (window.userRole === 'listener' && tracks.length > 0) {
           const infoDiv = document.createElement('div');
           infoDiv.style.cssText = `
             background: rgba(33, 150, 243, 0.1);

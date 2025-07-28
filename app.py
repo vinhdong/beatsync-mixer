@@ -134,6 +134,12 @@ def callback():
             with open(host_file, 'w') as f:
                 f.write(f"{user_id}|{display_name}")
             
+            # Store host token for anonymous listener access
+            host_token_file = f'host_token_{user_id}.txt'
+            with open(host_token_file, 'w') as tf:
+                import json
+                tf.write(json.dumps(token))
+            
             print(f"User {user_id} is now hosting")
             
         else:
@@ -160,23 +166,67 @@ def callback():
 # Fetch playlists
 @app.route("/playlists")
 def playlists():
-    token = session.get("spotify_token")
-    if not token:
+    user_role = session.get("role")
+    
+    if user_role == "host":
+        # Host uses their own token
+        token = session.get("spotify_token")
+        if not token:
+            return redirect(url_for("login"))
+        resp = oauth.spotify.get("https://api.spotify.com/v1/me/playlists", token=token)
+        return jsonify(resp.json())
+    
+    elif user_role == "listener":
+        # Anonymous listeners use host's token to see host's playlists
+        host_token = get_host_token()
+        if not host_token:
+            return jsonify({"error": "No active host session", "playlists": []})
+        
+        try:
+            resp = oauth.spotify.get("https://api.spotify.com/v1/me/playlists", token=host_token)
+            return jsonify(resp.json())
+        except Exception as e:
+            print(f"Error fetching host playlists: {e}")
+            return jsonify({"error": "Could not fetch host playlists", "playlists": []})
+    
+    else:
+        # Not authenticated
         return redirect(url_for("login"))
-    resp = oauth.spotify.get("https://api.spotify.com/v1/me/playlists", token=token)
-    return jsonify(resp.json())
 
 
 # Fetch tracks for a given playlist
 @app.route("/playlists/<playlist_id>/tracks")
 def playlist_tracks(playlist_id):
-    token = session.get("spotify_token")
-    if not token:
+    user_role = session.get("role")
+    
+    if user_role == "host":
+        # Host uses their own token
+        token = session.get("spotify_token")
+        if not token:
+            return redirect(url_for("login"))
+        resp = oauth.spotify.get(
+            f"https://api.spotify.com/v1/playlists/{playlist_id}/tracks", token=token
+        )
+        return jsonify(resp.json())
+    
+    elif user_role == "listener":
+        # Anonymous listeners use host's token to see host's playlist tracks
+        host_token = get_host_token()
+        if not host_token:
+            return jsonify({"error": "No active host session", "tracks": []})
+        
+        try:
+            resp = oauth.spotify.get(
+                f"https://api.spotify.com/v1/playlists/{playlist_id}/tracks", token=host_token
+            )
+            return jsonify(resp.json())
+        except Exception as e:
+            print(f"Error fetching host playlist tracks: {e}")
+            return jsonify({"error": "Could not fetch host playlist tracks", "tracks": []})
+    
+    else:
+        # Not authenticated
         return redirect(url_for("login"))
-    resp = oauth.spotify.get(
-        f"https://api.spotify.com/v1/playlists/{playlist_id}/tracks", token=token
-    )
-    return jsonify(resp.json())
 
 
 # Get Last.fm recommendations for a queued track
@@ -353,10 +403,11 @@ def handle_queue_add(data):
 
 @socketio.on("vote_add")
 def handle_vote_add(data):
-    """Handle voting on tracks - Available to all authenticated users"""
-    # Check if user is authenticated (has any role)
-    if not session.get("role"):
-        emit("error", {"message": "You must be logged in to vote"})
+    """Handle voting on tracks - Available to all users (including anonymous listeners)"""
+    # Check if user has any role (including anonymous listener)
+    user_role = session.get("role")
+    if not user_role:
+        emit("error", {"message": "You must join as a listener or host to vote"})
         return
     
     track_uri = data.get("track_uri")
@@ -394,14 +445,15 @@ def handle_vote_add(data):
 
 @socketio.on("chat_message")
 def handle_chat_message(data):
-    """Handle chat messages - Available to all authenticated users"""
-    # Check if user is authenticated (has any role)
-    if not session.get("role"):
-        emit("error", {"message": "You must be logged in to chat"})
+    """Handle chat messages - Available to all users (including anonymous listeners)"""
+    # Check if user has any role (including anonymous listener)
+    user_role = session.get("role")
+    if not user_role:
+        emit("error", {"message": "You must join as a listener or host to chat"})
         return
     
     # Use session data for user identification
-    user = session.get("display_name", "Anonymous")
+    user = session.get("display_name", "Anonymous Listener")
     message = data.get("message", "")
 
     if not message.strip():
@@ -831,6 +883,49 @@ def select_role():
     """
 
 
+@app.route("/set-listener", methods=["POST"])
+def set_listener():
+    """Set user as anonymous listener without authentication"""
+    session["role"] = "listener"
+    session["user_id"] = "anonymous"
+    session["display_name"] = "Anonymous Listener"
+    
+    return jsonify({
+        "status": "success",
+        "role": "listener",
+        "user_id": "anonymous",
+        "display_name": "Anonymous Listener"
+    })
+
+
+def get_host_token():
+    """Get the current host's Spotify token for playlist access"""
+    import os
+    host_file = 'current_host.txt'
+    
+    if not os.path.exists(host_file):
+        return None
+    
+    try:
+        with open(host_file, 'r') as f:
+            host_info = f.read().strip().split('|')
+            if len(host_info) >= 2:
+                host_id = host_info[0]
+                # Try to find an active session with the host's token
+                # This is a simplified approach - in production you'd want proper token storage
+                # For now, we'll check if any session has the host role and return that token
+                # Note: This assumes the host's session is still active
+                host_token_file = f'host_token_{host_id}.txt'
+                if os.path.exists(host_token_file):
+                    with open(host_token_file, 'r') as tf:
+                        import json
+                        return json.loads(tf.read())
+    except Exception as e:
+        print(f"Error getting host token: {e}")
+    
+    return None
+
+
 @app.route("/host-status")
 def host_status():
     """Check if someone is currently hosting"""
@@ -877,11 +972,21 @@ def sign_out_host():
 def restart_session():
     """Restart the entire session - clears all session data, host state, queue, votes, and chat"""
     try:
-        # Remove host file
+        # Remove host file and host token files
         import os
+        import glob
+        
         host_file = 'current_host.txt'
         if os.path.exists(host_file):
             os.remove(host_file)
+        
+        # Remove all host token files
+        host_token_files = glob.glob('host_token_*.txt')
+        for token_file in host_token_files:
+            try:
+                os.remove(token_file)
+            except Exception as e:
+                print(f"Error removing host token file {token_file}: {e}")
         
         # Clear all user sessions (note: this only clears the current user's session)
         session.clear()
