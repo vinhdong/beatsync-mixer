@@ -2,8 +2,6 @@ import os
 import datetime
 import requests
 import pylast
-import eventlet
-eventlet.monkey_patch()
 from dotenv import load_dotenv
 from flask import Flask, jsonify, session, redirect, url_for, send_from_directory, abort, request, request
 from sqlalchemy import create_engine, Column, Integer, String, DateTime
@@ -359,7 +357,7 @@ def index():
 
 
 # Socket.IO setup with production optimizations
-async_mode = os.getenv("FLASK_SOCKETIO_ASYNC_MODE", "eventlet")
+async_mode = os.getenv("FLASK_SOCKETIO_ASYNC_MODE", "threading")
 socketio = SocketIO(
     app, 
     cors_allowed_origins="*", 
