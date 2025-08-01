@@ -1562,6 +1562,27 @@
       }
     });
 
+    // Add success handler for queue_add
+    socket.on("queue_add_success", data => {
+      console.log("Track successfully added to queue:", data);
+      // Show success message briefly
+      const successMsg = document.createElement("div");
+      successMsg.style.cssText = `
+        position: fixed; top: 20px; right: 20px; background: #1db954; 
+        color: white; padding: 10px 20px; border-radius: 5px; z-index: 9999;
+        font-weight: bold; box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+      `;
+      successMsg.textContent = data.message || "Track added to queue!";
+      document.body.appendChild(successMsg);
+      
+      // Remove after 3 seconds
+      setTimeout(() => {
+        if (successMsg.parentNode) {
+          successMsg.parentNode.removeChild(successMsg);
+        }
+      }, 3000);
+    });
+
     socket.on("queue_cleared", () => {
       document.getElementById("queue").innerHTML = '';
       queueCount = 0;

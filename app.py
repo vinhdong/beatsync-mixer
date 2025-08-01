@@ -16,6 +16,11 @@ load_dotenv()
 app = Flask(__name__, static_folder="frontend", static_url_path="")
 app.config["SECRET_KEY"] = os.getenv("FLASK_SECRET")
 
+# Configure session for production
+app.config['SESSION_COOKIE_SECURE'] = True if os.getenv('FLASK_ENV') == 'production' else False
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+
 # Configure caching
 app.config['CACHE_TYPE'] = 'SimpleCache'  # In-memory cache for development
 app.config['CACHE_DEFAULT_TIMEOUT'] = 300  # 5 minutes
@@ -377,7 +382,8 @@ socketio = SocketIO(
     max_http_buffer_size=16384,
     allow_upgrades=True,
     transports=['polling', 'websocket'],
-    manage_session=False  # Let Flask handle sessions
+    manage_session=False,  # Let Flask handle sessions
+    cookie=False  # Disable Socket.IO's own cookies to rely on Flask session
 )
 
 
@@ -443,6 +449,8 @@ def handle_disconnect():
 @socketio.on_error_default
 def default_error_handler(e):
     print(f"Socket.IO error: {e}")
+    import traceback
+    traceback.print_exc()
     return False
 
 
@@ -450,15 +458,17 @@ def default_error_handler(e):
 def handle_queue_add(data):
     """Add track to queue - Host only"""
     try:
-        print(f"Queue add request from {request.sid}, session: {dict(session)}")
+        print(f"Queue add request from {request.sid}")
+        print(f"Request headers: {dict(request.headers)}")
         
         # Check if session exists and has role
         user_role = session.get("role")
-        print(f"User role from session: {user_role}")
+        user_id = session.get("user_id") 
+        print(f"User role from session: {user_role}, User ID: {user_id}")
         
         if not user_role:
-            print("No role found in session")
-            emit("error", {"message": "Authentication required. Please refresh the page and try again."})
+            print("No role found in session - authentication issue")
+            emit("error", {"message": "Authentication expired. Please refresh the page and log in again."})
             return
             
         if user_role != "host":
@@ -467,10 +477,11 @@ def handle_queue_add(data):
             return
         
         # Validate data
-        track_uri = data.get("track_uri")
-        track_name = data.get("track_name")
+        track_uri = data.get("track_uri") if data else None
+        track_name = data.get("track_name") if data else None
         
         if not track_uri or not track_name:
+            print(f"Missing track information: uri={track_uri}, name={track_name}")
             emit("error", {"message": "Missing track information"})
             return
         
@@ -496,6 +507,16 @@ def handle_queue_add(data):
             )
             print("Queue update broadcasted to all clients")
             
+            # Send success confirmation back to the sender
+            emit("queue_add_success", {
+                "message": f"Added '{track_name}' to queue",
+                "track_uri": track_uri
+            })
+            
+        except Exception as db_error:
+            print(f"Database error: {db_error}")
+            db.rollback()
+            emit("error", {"message": "Database error while adding track"})
         finally:
             db.close()
             
