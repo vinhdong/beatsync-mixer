@@ -95,6 +95,18 @@ def health():
     return jsonify(status="ok")
 
 
+# Session debug endpoint
+@app.route("/session-info")
+def session_info():
+    return jsonify({
+        "session_data": dict(session),
+        "role": session.get("role"),
+        "user_id": session.get("user_id"),
+        "has_token": bool(session.get("spotify_token")),
+        "cookies": dict(request.cookies) if request.cookies else {}
+    })
+
+
 # Login route
 @app.route("/login")
 def login():
@@ -364,13 +376,18 @@ socketio = SocketIO(
     ping_interval=25,
     max_http_buffer_size=16384,
     allow_upgrades=True,
-    transports=['polling', 'websocket']
+    transports=['polling', 'websocket'],
+    manage_session=False  # Let Flask handle sessions
 )
 
 
 @socketio.on("connect")
 def handle_connect(auth):
     print(f"Client connected: {request.sid}")
+    print(f"Session data on connect: {dict(session)}")
+    print(f"User role: {session.get('role', 'None')}")
+    print(f"User ID: {session.get('user_id', 'None')}")
+    
     try:
         db = SessionLocal()
         try:
@@ -433,17 +450,40 @@ def default_error_handler(e):
 def handle_queue_add(data):
     """Add track to queue - Host only"""
     try:
-        # Check if user has host role
-        if session.get("role") != "host":
+        print(f"Queue add request from {request.sid}, session: {dict(session)}")
+        
+        # Check if session exists and has role
+        user_role = session.get("role")
+        print(f"User role from session: {user_role}")
+        
+        if not user_role:
+            print("No role found in session")
+            emit("error", {"message": "Authentication required. Please refresh the page and try again."})
+            return
+            
+        if user_role != "host":
+            print(f"Non-host user attempted to add to queue: {user_role}")
             emit("error", {"message": "Only hosts can add tracks to the queue"})
             return
+        
+        # Validate data
+        track_uri = data.get("track_uri")
+        track_name = data.get("track_name")
+        
+        if not track_uri or not track_name:
+            emit("error", {"message": "Missing track information"})
+            return
+        
+        print(f"Adding track to queue: {track_name} ({track_uri})")
         
         # Persist the new queue item
         db = SessionLocal()
         try:
-            qi = QueueItem(track_uri=data.get("track_uri"), track_name=data.get("track_name"))
+            qi = QueueItem(track_uri=track_uri, track_name=track_name)
             db.add(qi)
             db.commit()
+            print(f"Track added to database with ID: {qi.id}")
+            
             # Broadcast to all clients with timestamp
             socketio.emit(
                 "queue_updated",
@@ -454,10 +494,15 @@ def handle_queue_add(data):
                 },
                 broadcast=True
             )
+            print("Queue update broadcasted to all clients")
+            
         finally:
             db.close()
+            
     except Exception as e:
         print(f"Error in queue_add: {e}")
+        import traceback
+        traceback.print_exc()
         emit("error", {"message": "Failed to add track to queue"})
 
 

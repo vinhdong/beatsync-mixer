@@ -970,6 +970,21 @@
 
     socket.on('error', function(error) {
       console.error('Socket.IO error:', error);
+      
+      // Show user-friendly error message
+      if (error.message) {
+        alert('Error: ' + error.message);
+      }
+      
+      // If authentication error, fetch session info for debugging
+      if (error.message && error.message.includes('Authentication')) {
+        fetch('/session-info')
+          .then(response => response.json())
+          .then(sessionData => {
+            console.log('Session data after auth error:', sessionData);
+          })
+          .catch(err => console.error('Failed to fetch session info after error:', err));
+      }
     });
 
     // Spotify Web Playback SDK variables
@@ -1972,6 +1987,14 @@
         alert('Only hosts can add tracks to the queue.');
         return;
       }
+      
+      // Debug session info before attempting to queue
+      fetch('/session-info')
+        .then(response => response.json())
+        .then(sessionData => {
+          console.log('Current session data:', sessionData);
+        })
+        .catch(err => console.error('Failed to fetch session info:', err));
       
       socket.emit('queue_add', { 
         track_uri: trackUri,
