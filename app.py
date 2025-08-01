@@ -107,60 +107,70 @@ def login():
 # Callback route
 @app.route("/callback")
 def callback():
-    token = oauth.spotify.authorize_access_token()
-    session["spotify_token"] = token
-    oauth.spotify.token = token
-    
-    # Fetch user profile
     try:
-        user_response = oauth.spotify.get("https://api.spotify.com/v1/me", token=token)
-        user_data = user_response.json()
-        user_id = user_data.get("id")
-        display_name = user_data.get("display_name", user_id)
+        token = oauth.spotify.authorize_access_token()
+        session["spotify_token"] = token
+        oauth.spotify.token = token
         
-        # Get the requested role from session
-        requested_role = session.get('requested_role', 'listener')
-        
-        # Handle role assignment
-        if requested_role == 'host':
-            # Check if someone is already hosting
-            import os
-            host_file = 'current_host.txt'
+        # Fetch user profile
+        try:
+            user_response = oauth.spotify.get("https://api.spotify.com/v1/me", token=token)
+            user_data = user_response.json()
+            user_id = user_data.get("id")
+            display_name = user_data.get("display_name", user_id)
             
-            if os.path.exists(host_file):
-                # Someone is already hosting
-                return redirect("/?error=host_taken")
+            # Get the requested role from session
+            requested_role = session.get('requested_role', 'listener')
             
-            # Set as host and create host file
-            session["role"] = "host"
-            session["user_id"] = user_id
-            session["display_name"] = display_name
+            # Handle role assignment
+            if requested_role == 'host':
+                # Check if someone is already hosting
+                import os
+                host_file = 'current_host.txt'
+                
+                if os.path.exists(host_file):
+                    # Someone is already hosting
+                    return redirect("/?error=host_taken")
+                
+                # Set as host and create host file
+                session["role"] = "host"
+                session["user_id"] = user_id
+                session["display_name"] = display_name
+                
+                # Create host file to track current host
+                with open(host_file, 'w') as f:
+                    f.write(f"{user_id}|{display_name}")
+                
+                print(f"User {user_id} is now hosting")
+                
+            else:
+                # Set as listener
+                session["role"] = "listener"
+                session["user_id"] = user_id
+                session["display_name"] = display_name
+                
+                print(f"User {user_id} joined as listener")
             
-            # Create host file to track current host
-            with open(host_file, 'w') as f:
-                f.write(f"{user_id}|{display_name}")
-            
-            print(f"User {user_id} is now hosting")
-            
-        else:
-            # Set as listener
+        except Exception as e:
+            print(f"Error fetching user profile: {e}")
+            # Default to listener role if we can't fetch user info
             session["role"] = "listener"
-            session["user_id"] = user_id
-            session["display_name"] = display_name
-            
-            print(f"User {user_id} joined as listener")
+            session["user_id"] = "unknown"
+            session["display_name"] = "Unknown User"
+        
+        # Clear the requested role from session
+        session.pop('requested_role', None)
+        
+        return redirect("/")
         
     except Exception as e:
-        print(f"Error fetching user profile: {e}")
-        # Default to listener role if we can't fetch user info
-        session["role"] = "listener"
-        session["user_id"] = "unknown"
-        session["display_name"] = "Unknown User"
-    
-    # Clear the requested role from session
-    session.pop('requested_role', None)
-    
-    return redirect("/")
+        print(f"OAuth callback error: {e}")
+        # Log the specific error type for debugging
+        import traceback
+        print(f"Full traceback: {traceback.format_exc()}")
+        
+        # Redirect back to role selection with an error
+        return redirect("/select-role?error=oauth_failed")
 
 
 # Fetch playlists
@@ -733,6 +743,13 @@ def select_role():
         <div style="background: #ffe6e6; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #e74c3c; color: #c0392b;">
             <strong>⚠️ Host Position Taken</strong><br>
             Someone is already hosting a session. You can join as a listener or wait for the current host to sign out.
+        </div>
+        """
+    elif error == 'oauth_failed':
+        error_message = """
+        <div style="background: #ffe6e6; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #e74c3c; color: #c0392b;">
+            <strong>⚠️ Authentication Failed</strong><br>
+            There was an issue connecting to Spotify. Please try again. If the problem persists, clear your browser cache and cookies.
         </div>
         """
     
