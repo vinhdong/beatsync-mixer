@@ -357,7 +357,7 @@ def index():
 
 
 # Socket.IO setup with production optimizations
-async_mode = os.getenv("FLASK_SOCKETIO_ASYNC_MODE", "threading")
+async_mode = os.getenv("FLASK_SOCKETIO_ASYNC_MODE", "eventlet")
 socketio = SocketIO(
     app, 
     cors_allowed_origins="*", 
