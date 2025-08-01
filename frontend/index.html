@@ -955,6 +955,22 @@
     let queueCount = 0;
     let currentUser = 'User_' + Math.random().toString(36).substr(2, 9); // Generate random user ID
     let voteData = {}; // Store vote counts for tracks
+    let socketConnected = false; // Track socket connection status
+
+    // Socket connection events
+    socket.on('connect', function() {
+      console.log('Socket.IO connected');
+      socketConnected = true;
+    });
+
+    socket.on('disconnect', function() {
+      console.log('Socket.IO disconnected');
+      socketConnected = false;
+    });
+
+    socket.on('error', function(error) {
+      console.error('Socket.IO error:', error);
+    });
 
     // Spotify Web Playback SDK variables
     let player = null;
@@ -992,8 +1008,8 @@
       loadPlaylists();
       loadQueue();
       
-      // Connect to socket.io for real-time updates
-      socketConnected();
+      // Socket.IO will automatically connect when the page loads
+      console.log('Guest setup complete');
     }
 
     // Initialize Spotify Web Playback SDK
@@ -1690,6 +1706,15 @@
       chatBox.classList.toggle('minimized');
       toggleBtn.textContent = chatBox.classList.contains('minimized') ? '+' : '−';
     }
+
+    // Handle socket errors
+    socket.on('error', function(error) {
+      console.error('Socket error received:', error);
+      if (error.message) {
+        alert('Error: ' + error.message);
+      }
+    });
+
     function playTrack() {
       // TODO: Implement Spotify Web Playback SDK integration
       // This will require:
@@ -1933,10 +1958,27 @@
     }
 
     function queueTrack(trackUri, trackName) {
+      console.log('queueTrack called with:', { trackUri, trackName });
+      console.log('Socket connected:', socketConnected);
+      console.log('User role:', window.userRole);
+      
+      if (!socketConnected) {
+        console.error('Socket not connected');
+        alert('Connection issue. Please refresh the page.');
+        return;
+      }
+      
+      if (window.userRole !== 'host') {
+        alert('Only hosts can add tracks to the queue.');
+        return;
+      }
+      
       socket.emit('queue_add', { 
         track_uri: trackUri,
         track_name: trackName
       });
+      
+      console.log('Emitted queue_add event');
     }
 
     async function loadPlaylistTracks(playlistId) {
