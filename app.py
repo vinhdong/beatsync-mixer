@@ -442,8 +442,8 @@ def handle_connect(auth):
 
 
 @socketio.on("disconnect")
-def handle_disconnect():
-    print(f"Client disconnected: {request.sid}")
+def handle_disconnect(reason=None):
+    print(f"Client disconnected: {request.sid}, reason: {reason}")
 
 
 @socketio.on_error_default
