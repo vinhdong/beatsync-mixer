@@ -89,19 +89,7 @@ def login():
 # Callback route
 @app.route("/callback")
 def callback():
-    try:
-        token = oauth.spotify.authorize_access_token()
-    except Exception as e:
-        # Handle OAuth state mismatch or other auth errors
-        if "mismatching_state" in str(e) or "MismatchingStateError" in str(e):
-            # Clear session and redirect to start fresh
-            session.clear()
-            return redirect("/?error=auth_state_mismatch")
-        else:
-            # Handle other OAuth errors
-            session.clear()
-            return redirect("/?error=auth_failed")
-    
+    token = oauth.spotify.authorize_access_token()
     session["spotify_token"] = token
     oauth.spotify.token = token
     
@@ -134,12 +122,6 @@ def callback():
             with open(host_file, 'w') as f:
                 f.write(f"{user_id}|{display_name}")
             
-            # Store host token for anonymous listener access
-            host_token_file = f'host_token_{user_id}.txt'
-            with open(host_token_file, 'w') as tf:
-                import json
-                tf.write(json.dumps(token))
-            
             print(f"User {user_id} is now hosting")
             
         else:
@@ -166,67 +148,23 @@ def callback():
 # Fetch playlists
 @app.route("/playlists")
 def playlists():
-    user_role = session.get("role")
-    
-    if user_role == "host":
-        # Host uses their own token
-        token = session.get("spotify_token")
-        if not token:
-            return redirect(url_for("login"))
-        resp = oauth.spotify.get("https://api.spotify.com/v1/me/playlists", token=token)
-        return jsonify(resp.json())
-    
-    elif user_role == "listener":
-        # Anonymous listeners use host's token to see host's playlists
-        host_token = get_host_token()
-        if not host_token:
-            return jsonify({"error": "No active host session", "playlists": []})
-        
-        try:
-            resp = oauth.spotify.get("https://api.spotify.com/v1/me/playlists", token=host_token)
-            return jsonify(resp.json())
-        except Exception as e:
-            print(f"Error fetching host playlists: {e}")
-            return jsonify({"error": "Could not fetch host playlists", "playlists": []})
-    
-    else:
-        # Not authenticated
+    token = session.get("spotify_token")
+    if not token:
         return redirect(url_for("login"))
+    resp = oauth.spotify.get("https://api.spotify.com/v1/me/playlists", token=token)
+    return jsonify(resp.json())
 
 
 # Fetch tracks for a given playlist
 @app.route("/playlists/<playlist_id>/tracks")
 def playlist_tracks(playlist_id):
-    user_role = session.get("role")
-    
-    if user_role == "host":
-        # Host uses their own token
-        token = session.get("spotify_token")
-        if not token:
-            return redirect(url_for("login"))
-        resp = oauth.spotify.get(
-            f"https://api.spotify.com/v1/playlists/{playlist_id}/tracks", token=token
-        )
-        return jsonify(resp.json())
-    
-    elif user_role == "listener":
-        # Anonymous listeners use host's token to see host's playlist tracks
-        host_token = get_host_token()
-        if not host_token:
-            return jsonify({"error": "No active host session", "tracks": []})
-        
-        try:
-            resp = oauth.spotify.get(
-                f"https://api.spotify.com/v1/playlists/{playlist_id}/tracks", token=host_token
-            )
-            return jsonify(resp.json())
-        except Exception as e:
-            print(f"Error fetching host playlist tracks: {e}")
-            return jsonify({"error": "Could not fetch host playlist tracks", "tracks": []})
-    
-    else:
-        # Not authenticated
+    token = session.get("spotify_token")
+    if not token:
         return redirect(url_for("login"))
+    resp = oauth.spotify.get(
+        f"https://api.spotify.com/v1/playlists/{playlist_id}/tracks", token=token
+    )
+    return jsonify(resp.json())
 
 
 # Get Last.fm recommendations for a queued track
@@ -291,10 +229,6 @@ def index():
         error = request.args.get('error')
         if error == 'host_taken':
             return redirect("/select-role?error=host_taken")
-        elif error == 'auth_state_mismatch':
-            return redirect("/select-role?error=auth_state_mismatch")
-        elif error == 'auth_failed':
-            return redirect("/select-role?error=auth_failed")
         return redirect("/select-role")
     
     # Read the HTML file and inject role information
@@ -376,17 +310,10 @@ def handle_connect(auth):
 
 @socketio.on("queue_add")
 def handle_queue_add(data):
-    """Add track to queue - Available to hosts and listeners"""
-    print(f"DEBUG: queue_add called with data: {data}")
-    print(f"DEBUG: session data: {dict(session)}")
-    
-    # Check if user has any role (host or listener)
-    user_role = session.get("role")
-    print(f"DEBUG: user_role: {user_role}")
-    
-    if not user_role:
-        print("DEBUG: No user role found, emitting error")
-        emit("error", {"message": "You must join as a listener or host to add tracks"})
+    """Add track to queue - Host only"""
+    # Check if user has host role
+    if session.get("role") != "host":
+        emit("error", {"message": "Only hosts can add tracks to the queue"})
         return
     
     # Persist the new queue item
@@ -395,35 +322,25 @@ def handle_queue_add(data):
         qi = QueueItem(track_uri=data.get("track_uri"), track_name=data.get("track_name"))
         db.add(qi)
         db.commit()
-        print(f"DEBUG: Successfully added track to queue: {qi.track_uri}")
-        
         # Broadcast to all clients with timestamp
-        queue_data = {
-            "track_uri": qi.track_uri,
-            "track_name": qi.track_name,
-            "timestamp": qi.timestamp.isoformat() if qi.timestamp else None,
-        }
-        print(f"DEBUG: Broadcasting queue_updated with data: {queue_data}")
-        
         emit(
             "queue_updated",
-            queue_data,
-            broadcast=True
+            {
+                "track_uri": qi.track_uri,
+                "track_name": qi.track_name,
+                "timestamp": qi.timestamp.isoformat() if qi.timestamp else None,
+            },
         )
-    except Exception as e:
-        print(f"DEBUG: Error adding track to queue: {e}")
-        emit("error", {"message": "Failed to add track to queue"})
     finally:
         db.close()
 
 
 @socketio.on("vote_add")
 def handle_vote_add(data):
-    """Handle voting on tracks - Available to all users (including anonymous listeners)"""
-    # Check if user has any role (including anonymous listener)
-    user_role = session.get("role")
-    if not user_role:
-        emit("error", {"message": "You must join as a listener or host to vote"})
+    """Handle voting on tracks - Available to all authenticated users"""
+    # Check if user is authenticated (has any role)
+    if not session.get("role"):
+        emit("error", {"message": "You must be logged in to vote"})
         return
     
     track_uri = data.get("track_uri")
@@ -452,8 +369,7 @@ def handle_vote_add(data):
 
         # Broadcast updated vote counts
         emit(
-            "vote_updated", {"track_uri": track_uri, "up_votes": up_votes, "down_votes": down_votes},
-            broadcast=True
+            "vote_updated", {"track_uri": track_uri, "up_votes": up_votes, "down_votes": down_votes}
         )
 
     finally:
@@ -462,15 +378,14 @@ def handle_vote_add(data):
 
 @socketio.on("chat_message")
 def handle_chat_message(data):
-    """Handle chat messages - Available to all users (including anonymous listeners)"""
-    # Check if user has any role (including anonymous listener)
-    user_role = session.get("role")
-    if not user_role:
-        emit("error", {"message": "You must join as a listener or host to chat"})
+    """Handle chat messages - Available to all authenticated users"""
+    # Check if user is authenticated (has any role)
+    if not session.get("role"):
+        emit("error", {"message": "You must be logged in to chat"})
         return
     
     # Use session data for user identification
-    user = session.get("display_name", "Anonymous Listener")
+    user = session.get("display_name", "Anonymous")
     message = data.get("message", "")
 
     if not message.strip():
@@ -492,7 +407,6 @@ def handle_chat_message(data):
                 "message": chat_msg.message,
                 "timestamp": chat_msg.timestamp.isoformat() if chat_msg.timestamp else None,
             },
-            broadcast=True
         )
 
     finally:
@@ -692,20 +606,6 @@ def select_role():
             Someone is already hosting a session. You can join as a listener or wait for the current host to sign out.
         </div>
         """
-    elif error == 'auth_state_mismatch':
-        error_message = """
-        <div style="background: #fff3cd; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #ffc107; color: #856404;">
-            <strong>⚠️ Authentication Error</strong><br>
-            Session expired or security check failed. Please try logging in again.
-        </div>
-        """
-    elif error == 'auth_failed':
-        error_message = """
-        <div style="background: #f8d7da; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #dc3545; color: #721c24;">
-            <strong>❌ Login Failed</strong><br>
-            Authentication with Spotify failed. Please try again or check your internet connection.
-        </div>
-        """
     
     return f"""
     <!DOCTYPE html>
@@ -827,10 +727,10 @@ def select_role():
             <div class="emoji">🎧</div>
             <h2>Join as Listener</h2>
             <div class="role-description">
-                Add tracks to queue, vote on music, chat with others, and enjoy the collaborative experience.
-                <br><strong>No login required!</strong>
+                Vote on tracks, chat with others, and enjoy the collaborative experience.
+                <br><strong>Note:</strong> Limited control over playback
             </div>
-            <button onclick="joinAsAnonymousListener()" class="role-btn listener-btn">🎧 Join as Anonymous Listener</button>
+            <a href="/login?role=listener" class="role-btn listener-btn">👥 Join Session</a>
         </div>
         
         <div class="restart-section">
@@ -895,79 +795,10 @@ def select_role():
                     }}
                 }}
             }}
-            
-            // Join as anonymous listener function
-            async function joinAsAnonymousListener() {{
-                try {{
-                    const response = await fetch('/set-listener', {{
-                        method: 'POST',
-                        headers: {{
-                            'Content-Type': 'application/json'
-                        }}
-                    }});
-                    
-                    if (response.ok) {{
-                        const data = await response.json();
-                        console.log('Anonymous listener session created:', data);
-                        
-                        // Redirect to main page
-                        window.location.href = '/';
-                    }} else {{
-                        console.error('Failed to create anonymous listener session');
-                        alert('Failed to join as listener. Please try again.');
-                    }}
-                }} catch (error) {{
-                    console.error('Error setting up anonymous listener:', error);
-                    alert('Error joining as listener. Please check your connection.');
-                }}
-            }}
         </script>
     </body>
     </html>
     """
-
-
-@app.route("/set-listener", methods=["POST"])
-def set_listener():
-    """Set user as anonymous listener without authentication"""
-    session["role"] = "listener"
-    session["user_id"] = "anonymous"
-    session["display_name"] = "Anonymous Listener"
-    
-    return jsonify({
-        "status": "success",
-        "role": "listener",
-        "user_id": "anonymous",
-        "display_name": "Anonymous Listener"
-    })
-
-
-def get_host_token():
-    """Get the current host's Spotify token for playlist access"""
-    import os
-    host_file = 'current_host.txt'
-    
-    if not os.path.exists(host_file):
-        return None
-    
-    try:
-        with open(host_file, 'r') as f:
-            host_info = f.read().strip().split('|')
-            if len(host_info) >= 2:
-                host_id = host_info[0]
-                # Try to find an active session with the host's token
-                # This is a simplified approach - in production you'd want proper token storage
-                # For now, we'll check if any session has the host role and return that token
-                # Note: This assumes the host's session is still active
-                host_token_file = f'host_token_{host_id}.txt'
-                if os.path.exists(host_token_file):
-                    with open(host_token_file, 'r') as tf:
-                        import json
-                        return json.loads(tf.read())
-    except Exception as e:
-        print(f"Error getting host token: {e}")
-    
-    return None
 
 
 @app.route("/host-status")
@@ -1016,21 +847,11 @@ def sign_out_host():
 def restart_session():
     """Restart the entire session - clears all session data, host state, queue, votes, and chat"""
     try:
-        # Remove host file and host token files
+        # Remove host file
         import os
-        import glob
-        
         host_file = 'current_host.txt'
         if os.path.exists(host_file):
             os.remove(host_file)
-        
-        # Remove all host token files
-        host_token_files = glob.glob('host_token_*.txt')
-        for token_file in host_token_files:
-            try:
-                os.remove(token_file)
-            except Exception as e:
-                print(f"Error removing host token file {token_file}: {e}")
         
         # Clear all user sessions (note: this only clears the current user's session)
         session.clear()
@@ -1050,10 +871,10 @@ def restart_session():
             db.commit()
             
             # Emit events to all connected clients
-            socketio.emit('queue_cleared')
-            socketio.emit('votes_cleared')
-            socketio.emit('chat_cleared')
-            socketio.emit('session_restarted')
+            socketio.emit('queue_cleared', broadcast=True)
+            socketio.emit('votes_cleared', broadcast=True)
+            socketio.emit('chat_cleared', broadcast=True)
+            socketio.emit('session_restarted', broadcast=True)
             
         except Exception as e:
             db.rollback()

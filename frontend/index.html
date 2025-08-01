@@ -867,8 +867,14 @@
             </a>
           </div>
           <div class="role-option">
-            <button onclick="continueAsGuest()" class="role-btn listener-btn">
+            <a href="/login?role=listener" class="role-btn listener-btn">
               🎧 Join as Listener
+              <small>Vote on music, chat with others</small>
+            </a>
+          </div>
+          <div class="role-option">
+            <button onclick="continueAsGuest()" class="role-btn guest-btn">
+              👋 Continue as Guest
               <small>Vote, chat, browse - no login required</small>
             </button>
           </div>
@@ -949,52 +955,29 @@
     let trackEndCheckInterval = null;
 
     // Continue as guest function
-    async function continueAsGuest() {
-      try {
-        // Call backend to set listener role
-        const response = await fetch('/set-listener', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          }
-        });
-        
-        if (!response.ok) {
-          console.error('Failed to set listener role');
-          alert('Error joining as listener. Please try again.');
-          return;
-        }
-        
-        const data = await response.json();
-        console.log('Successfully set as listener:', data);
-        
-        // Hide the login section
-        const loginDiv = document.getElementById('login');
-        if (loginDiv) {
-          loginDiv.style.display = 'none';
-        }
-        
-        // Set role from backend response
-        window.userRole = data.role;
-        window.userId = data.user_id;
-        window.displayName = data.display_name;
-        
-        console.log('Continuing as anonymous listener:', window.userId);
-        
-        // Initialize listener UI
-        initializeRoleBasedUI();
-        
-        // Load shared playlists for listeners
-        loadPlaylists();
-        loadInitialQueue();
-        
-        // Connect to socket.io for real-time updates
-        console.log('Socket connected for listener');
-        
-      } catch (error) {
-        console.error('Error setting listener role:', error);
-        alert('Error joining as listener. Please try again.');
+    function continueAsGuest() {
+      // Hide the login section
+      const loginDiv = document.getElementById('login');
+      if (loginDiv) {
+        loginDiv.style.display = 'none';
       }
+      
+      // Set role to guest and initialize UI
+      window.userRole = 'guest';
+      window.userId = 'guest_' + Math.random().toString(36).substr(2, 9);
+      window.displayName = 'Guest';
+      
+      console.log('Continuing as guest:', window.userId);
+      
+      // Initialize guest UI
+      initializeRoleBasedUI();
+      
+      // Load shared playlists and queue for guests
+      loadPlaylists();
+      loadQueue();
+      
+      // Connect to socket.io for real-time updates
+      socketConnected();
     }
 
     // Initialize Spotify Web Playback SDK
@@ -1850,33 +1833,16 @@
       try {
         const res = await fetch('/playlists');
         if (res.redirected) {
-          // For listeners, show guest mode instead of redirecting to login
-          if (window.userRole === 'listener') {
-            showSharedPlaylistsMessage();
-            return;
-          }
           document.getElementById('login').style.display = 'block';
           return;
         }
-        
         const data = await res.json();
-        
-        // Check if there's an error in the response (for listeners when no host)
-        if (data.error) {
-          if (window.userRole === 'listener') {
-            showSharedPlaylistsMessage();
-            return;
-          } else {
-            throw new Error(data.error);
-          }
-        }
-        
         document.getElementById('login').style.display = 'none';
         document.getElementById('playlists').style.display = 'block';
         
-        // Update the playlist section title based on user role
+        // Update the playlist section title based on guest mode
         const playlistsTitle = document.querySelector('#playlists h2');
-        if (window.userRole === 'listener') {
+        if (data.guest_mode) {
           playlistsTitle.textContent = '🎵 Host\'s Shared Playlists';
         } else {
           playlistsTitle.textContent = 'Your Playlists';
@@ -1885,31 +1851,43 @@
         const ul = document.getElementById('playlist-list');
         ul.innerHTML = ''; // Clear existing playlists
         
-        // Handle case where data.items might not exist or be empty
-        const playlists = data.items || [];
-        
-        // Show message if listener mode and no playlists
-        if (window.userRole === 'listener' && playlists.length === 0) {
-          showSharedPlaylistsMessage();
+        // Show message if guest mode and no playlists
+        if (data.guest_mode && data.items.length === 0) {
+          const messageDiv = document.createElement('div');
+          messageDiv.style.cssText = `
+            text-align: center;
+            padding: 20px;
+            color: #666;
+            font-style: italic;
+            border: 2px dashed #444;
+            border-radius: 8px;
+            margin: 20px 0;
+          `;
+          messageDiv.innerHTML = `
+            <div style="font-size: 2em; margin-bottom: 10px;">🎵</div>
+            ${data.message || 'No playlists shared yet'}<br><br>
+            <small>When a host connects and browses their playlists, they'll appear here for you to explore!</small>
+          `;
+          ul.appendChild(messageDiv);
           return;
         }
         
-        playlists.forEach(pl => {
+        data.items.forEach(pl => {
           const li = document.createElement('li');
           li.innerHTML = `
             <span>${pl.name}</span>
             <small>${pl.tracks ? pl.tracks.total : 'Unknown'} tracks</small>
-            ${window.userRole === 'listener' ? '<small style="color: #2196F3;">👤 Shared by Host</small>' : ''}
+            ${data.guest_mode ? '<small style="color: #9C27B0;">👤 Shared</small>' : ''}
           `;
           li.onclick = () => loadPlaylistTracks(pl.id);
           ul.appendChild(li);
         });
         
-        // Add listener mode info message
-        if (window.userRole === 'listener' && playlists.length > 0) {
+        // Add guest mode info message
+        if (data.guest_mode && data.items.length > 0) {
           const infoDiv = document.createElement('div');
           infoDiv.style.cssText = `
-            background: rgba(33, 150, 243, 0.1);
+            background: rgba(156, 39, 176, 0.1);
             padding: 10px;
             border-radius: 6px;
             margin: 15px 0;
@@ -1923,47 +1901,15 @@
         
       } catch (err) {
         console.error('Error loading playlists:', err);
-        
-        // For listeners, if there's an error, show the shared playlists message
-        if (window.userRole === 'listener') {
-          showSharedPlaylistsMessage();
-        } else {
-          // Show error message for hosts
-          const ul = document.getElementById('playlist-list');
-          ul.innerHTML = `
-            <div style="text-align: center; padding: 20px; color: #e74c3c;">
-              <div style="font-size: 2em; margin-bottom: 10px;">❌</div>
-              Error loading playlists. Please try again later.
-            </div>
-          `;
-        }
+        // Show error message
+        const ul = document.getElementById('playlist-list');
+        ul.innerHTML = `
+          <div style="text-align: center; padding: 20px; color: #e74c3c;">
+            <div style="font-size: 2em; margin-bottom: 10px;">❌</div>
+            Error loading playlists. Please try again later.
+          </div>
+        `;
       }
-    }
-
-    function showSharedPlaylistsMessage() {
-      document.getElementById('login').style.display = 'none';
-      document.getElementById('playlists').style.display = 'block';
-      
-      const playlistsTitle = document.querySelector('#playlists h2');
-      playlistsTitle.textContent = '🎵 Host\'s Shared Playlists';
-      
-      const ul = document.getElementById('playlist-list');
-      const messageDiv = document.createElement('div');
-      messageDiv.style.cssText = `
-        text-align: center;
-        padding: 20px;
-        color: #666;
-        font-style: italic;
-        border: 2px dashed #444;
-        border-radius: 8px;
-        margin: 20px 0;
-      `;
-      messageDiv.innerHTML = `
-        <div style="font-size: 2em; margin-bottom: 10px;">🎵</div>
-        No playlists shared yet<br><br>
-        <small>When a host connects and browses their playlists, they'll appear here for you to explore!</small>
-      `;
-      ul.appendChild(messageDiv);
     }
 
     function queueTrack(trackUri, trackName) {
@@ -1977,34 +1923,17 @@
       try {
         const res = await fetch(`/playlists/${playlistId}/tracks`);
         if (res.redirected) {
-          // For listeners, handle as guest mode
-          if (window.userRole === 'listener') {
-            showNoTracksMessage('Tracks not available yet');
-            return;
-          }
           window.location = res.url;
           return;
         }
-        
         const data = await res.json();
-        
-        // Check if there's an error in the response (for listeners when no host)
-        if (data.error) {
-          if (window.userRole === 'listener') {
-            showNoTracksMessage('Tracks not available yet');
-            return;
-          } else {
-            throw new Error(data.error);
-          }
-        }
-        
         document.getElementById('playlists').style.display = 'none';
         document.getElementById('tracks').style.display = 'block';
         
         // Update tracks section title
         const tracksTitle = document.querySelector('#tracks h2');
-        if (window.userRole === 'listener') {
-          tracksTitle.textContent = '🎵 Playlist Tracks (Shared by Host)';
+        if (data.guest_mode) {
+          tracksTitle.textContent = '🎵 Playlist Tracks (Guest View)';
         } else {
           tracksTitle.textContent = 'Playlist Tracks';
         }
@@ -2012,17 +1941,40 @@
         const ul = document.getElementById('track-list');
         ul.innerHTML = '';
 
-        // Handle case where data.items might not exist or be empty
-        const tracks = data.items || [];
-
-        // Handle listener mode with no tracks
-        if (window.userRole === 'listener' && tracks.length === 0) {
-          showNoTracksMessage('No tracks cached yet');
+        // Handle guest mode with no tracks
+        if (data.guest_mode && data.items.length === 0) {
+          const messageDiv = document.createElement('div');
+          messageDiv.style.cssText = `
+            text-align: center;
+            padding: 30px 20px;
+            color: #666;
+            border: 2px dashed #444;
+            border-radius: 8px;
+            margin: 20px 0;
+          `;
+          messageDiv.innerHTML = `
+            <div style="font-size: 2.5em; margin-bottom: 15px;">🎵</div>
+            <strong>${data.message || 'No tracks cached yet'}</strong><br><br>
+            <small style="color: #999;">
+              The host needs to browse this playlist first to cache the tracks for guests.<br>
+              You can still vote on tracks that are already in the queue!
+            </small><br><br>
+            <button onclick="loadPlaylists()" style="
+              background: linear-gradient(135deg, #9C27B0, #E91E63);
+              color: white;
+              border: none;
+              padding: 8px 16px;
+              border-radius: 6px;
+              cursor: pointer;
+              margin-top: 10px;
+            ">← Back to Playlists</button>
+          `;
+          ul.appendChild(messageDiv);
           return;
         }
 
         // Display tracks
-        tracks.forEach(item => {
+        data.items.forEach(item => {
           const t = item.track;
           if (t && t.name) { // Check if track exists (some tracks can be null)
             const li = document.createElement('li');
@@ -2030,27 +1982,39 @@
               <div>
                 <strong>${t.name}</strong><br>
                 <small>${t.artists.map(a => a.name).join(', ')}</small>
-                ${window.userRole === 'listener' ? '<small style="color: #2196F3; font-size: 0.7em;">👤 Shared by Host</small>' : ''}
+                ${data.guest_mode ? '<small style="color: #9C27B0; font-size: 0.7em;">👤 Cached for guests</small>' : ''}
               </div>
             `;
+            const btn = document.createElement('button');
             
-            // Show appropriate button based on role - both hosts and listeners can add tracks
-            if (window.userRole === 'host' || window.userRole === 'listener') {
-              const btn = document.createElement('button');
+            // Show appropriate button based on role
+            if (window.userRole === 'host') {
               btn.textContent = 'Add to Queue';
               btn.onclick = () => queueTrack(t.uri, `${t.name} - ${t.artists.map(a => a.name).join(', ')}`);
               li.appendChild(btn);
+            } else if (window.userRole === 'listener') {
+              btn.disabled = true;
+              btn.textContent = 'Host Only';
+              btn.style.opacity = '0.5';
+              btn.title = 'Only the host can add tracks to the queue';
+              li.appendChild(btn);
+            } else {
+              // Guests get a different message
+              const guestMsg = document.createElement('small');
+              guestMsg.style.cssText = 'color: #9C27B0; font-style: italic; margin-left: 10px;';
+              guestMsg.textContent = '(Vote on queued tracks instead!)';
+              li.appendChild(guestMsg);
             }
             
             ul.appendChild(li);
           }
         });
         
-        // Add info for listener mode
-        if (window.userRole === 'listener' && tracks.length > 0) {
+        // Add info for guest mode
+        if (data.guest_mode && data.items.length > 0) {
           const infoDiv = document.createElement('div');
           infoDiv.style.cssText = `
-            background: rgba(33, 150, 243, 0.1);
+            background: rgba(156, 39, 176, 0.1);
             padding: 12px;
             border-radius: 6px;
             margin: 15px 0;
@@ -2059,53 +2023,22 @@
             text-align: center;
           `;
           infoDiv.innerHTML = `
-            💡 <strong>Listener Mode:</strong> You can add tracks to the queue and vote on them.<br>
-            Only the host can control playback (play/pause/skip).
+            💡 <strong>Guest Mode:</strong> You can see tracks but can't add them to the queue.<br>
+            Head to the queue section to vote on tracks that are already queued!
           `;
           ul.appendChild(infoDiv);
         }
         
       } catch (err) {
         console.error('Error loading playlist tracks:', err);
-        showNoTracksMessage('Error loading tracks. Please try again later.');
+        const ul = document.getElementById('track-list');
+        ul.innerHTML = `
+          <div style="text-align: center; padding: 20px; color: #e74c3c;">
+            <div style="font-size: 2em; margin-bottom: 10px;">❌</div>
+            Error loading tracks. Please try again later.
+          </div>
+        `;
       }
-    }
-
-    function showNoTracksMessage(message) {
-      document.getElementById('playlists').style.display = 'none';
-      document.getElementById('tracks').style.display = 'block';
-      
-      const tracksTitle = document.querySelector('#tracks h2');
-      tracksTitle.textContent = '🎵 Playlist Tracks (Shared by Host)';
-      
-      const ul = document.getElementById('track-list');
-      const messageDiv = document.createElement('div');
-      messageDiv.style.cssText = `
-        text-align: center;
-        padding: 30px 20px;
-        color: #666;
-        border: 2px dashed #444;
-        border-radius: 8px;
-        margin: 20px 0;
-      `;
-      messageDiv.innerHTML = `
-        <div style="font-size: 2.5em; margin-bottom: 15px;">🎵</div>
-        <strong>${message}</strong><br><br>
-        <small style="color: #999;">
-          The host needs to browse this playlist first to cache the tracks for listeners.<br>
-          You can still vote on tracks that are already in the queue!
-        </small><br><br>
-        <button onclick="loadPlaylists()" style="
-          background: linear-gradient(135deg, #2196F3, #21CBF3);
-          color: white;
-          border: none;
-          padding: 8px 16px;
-          border-radius: 6px;
-          cursor: pointer;
-          margin-top: 10px;
-        ">← Back to Playlists</button>
-      `;
-      ul.appendChild(messageDiv);
     }
 
     window.onload = function() {
@@ -2190,24 +2123,54 @@
 
     // Role-based UI initialization
     function initializeRoleBasedUI() {
-      const role = window.userRole || 'listener';
+      const role = window.userRole || 'guest';
       console.log('Initializing UI for role:', role);
       
       // Update UI based on role
-      if (role === 'listener') {
-        // Listeners are anonymous users who can vote and chat
-        console.log('Setting up listener UI - can vote and chat anonymously');
+      if (role === 'guest') {
+        // Show guest-friendly UI
+        console.log('Setting up guest UI - can vote and chat');
         
-        // Hide login section for listeners
+        // Hide login section for guests (they can participate without auth)
         const loginDiv = document.getElementById('login');
         if (loginDiv) {
           loginDiv.style.display = 'none';
         }
         
-        // Show all interactive features for listeners
+        // Show all interactive features for guests
         document.getElementById('queue-section').style.display = 'block';
         document.getElementById('floating-chat').style.display = 'block';
         
+        // Hide host-only controls for guests
+        const clearQueueBtn = document.getElementById('clear-queue-btn');
+        if (clearQueueBtn) {
+          clearQueueBtn.style.display = 'none';
+        }
+        
+        // Hide restart button for guests
+        const restartBtn = document.getElementById('host-restart-btn');
+        if (restartBtn) {
+          restartBtn.style.display = 'none';
+        }
+        
+        // Hide playback controls for guests (they can only view what's playing)
+        const playbackControls = document.getElementById('playback-controls');
+        if (playbackControls) {
+          playbackControls.style.display = 'none';
+        }
+        
+        const volumeControl = document.getElementById('volume-control');
+        if (volumeControl) {
+          volumeControl.style.display = 'none';
+        }
+        
+        // Show role indicator for guests
+        addRoleIndicator('guest');
+        
+        // Add guest welcome message
+        addGuestWelcomeMessage();
+        
+      } else if (role === 'listener') {
         // Hide host-only controls for listeners
         const clearQueueBtn = document.getElementById('clear-queue-btn');
         if (clearQueueBtn) {
@@ -2231,12 +2194,20 @@
           volumeControl.style.display = 'none';
         }
         
-        // Show role indicator for listeners
+        // Update playback section title to indicate view-only
+        const playbackTitle = document.querySelector('#playback-section h3');
+        if (playbackTitle) {
+          playbackTitle.textContent = '🎵 Now Playing (View Only)';
+        }
+        
+        // Hide login section
+        const loginDiv = document.getElementById('login');
+        if (loginDiv) {
+          loginDiv.style.display = 'none';
+        }
+        
+        // Show role indicator
         addRoleIndicator('listener');
-        
-        // Add listener welcome message
-        addListenerWelcomeMessage();
-        
       } else if (role === 'host') {
         // Show all controls for hosts
         console.log('Setting up host UI - restart button should be visible');
@@ -2301,43 +2272,43 @@
       }
     }
 
-    function addListenerWelcomeMessage() {
+    function addGuestWelcomeMessage() {
       const h1 = document.querySelector('h1');
-      if (h1 && !document.querySelector('.listener-welcome')) {
+      if (h1 && !document.querySelector('.guest-welcome')) {
         const welcomeDiv = document.createElement('div');
-        welcomeDiv.className = 'listener-welcome';
+        welcomeDiv.className = 'guest-welcome';
         welcomeDiv.style.cssText = `
-          background: linear-gradient(135deg, rgba(33, 150, 243, 0.1), rgba(33, 203, 243, 0.1));
+          background: linear-gradient(135deg, rgba(156, 39, 176, 0.1), rgba(233, 30, 99, 0.1));
           padding: 20px;
           border-radius: 12px;
           margin: 20px 0;
-          border: 1px solid rgba(33, 150, 243, 0.3);
+          border: 1px solid rgba(156, 39, 176, 0.3);
           font-size: 0.95em;
           color: white;
           box-shadow: 0 4px 12px rgba(0,0,0,0.1);
         `;
         welcomeDiv.innerHTML = `
           <div style="text-align: center;">
-            <strong style="font-size: 1.1em;">🎧 Welcome, Anonymous Listener!</strong><br><br>
+            <strong style="font-size: 1.1em;">👋 Welcome, Guest!</strong><br><br>
             <div style="display: flex; justify-content: space-around; flex-wrap: wrap; gap: 15px; margin: 15px 0;">
               <div style="flex: 1; min-width: 120px; text-align: center;">
-                <div style="font-size: 1.5em; margin-bottom: 5px;">➕</div>
-                <strong>Add Tracks</strong><br>
-                <small style="color: #ccc;">Queue music from host's playlists</small>
-              </div>
-              <div style="flex: 1; min-width: 120px; text-align: center;">
-                <div style="font-size: 1.5em; margin-bottom: 5px;">�️</div>
+                <div style="font-size: 1.5em; margin-bottom: 5px;">🗳️</div>
                 <strong>Vote on Tracks</strong><br>
                 <small style="color: #ccc;">Help decide what plays next</small>
               </div>
               <div style="flex: 1; min-width: 120px; text-align: center;">
                 <div style="font-size: 1.5em; margin-bottom: 5px;">💬</div>
-                <strong>Chat Anonymously</strong><br>
+                <strong>Join the Chat</strong><br>
                 <small style="color: #ccc;">Talk with other listeners</small>
+              </div>
+              <div style="flex: 1; min-width: 120px; text-align: center;">
+                <div style="font-size: 1.5em; margin-bottom: 5px;">🎵</div>
+                <strong>Browse Playlists</strong><br>
+                <small style="color: #ccc;">See what's available</small>
               </div>
             </div>
             <small style="color: #ccc; font-style: italic;">
-              No sign-up required! To host your own session, <a href="javascript:void(0)" onclick="location.reload()" style="color: #21CBF3; text-decoration: underline;">click here</a> to go back.
+              No sign-up required! To host your own session, <a href="javascript:void(0)" onclick="location.reload()" style="color: #E91E63; text-decoration: underline;">click here</a> to go back.
             </small>
           </div>
         `;
