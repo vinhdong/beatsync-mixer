@@ -1077,5 +1077,6 @@ def remove_from_queue(track_uri):
 
 
 if __name__ == "__main__":
-    # TODO: In production, use a proper WSGI server like Gunicorn
-    socketio.run(app, host="0.0.0.0", port=8000, debug=True)
+    port = int(os.environ.get("PORT", 8000))
+    debug = os.environ.get("FLASK_ENV", "development") == "development"
+    socketio.run(app, host="0.0.0.0", port=port, debug=debug)
