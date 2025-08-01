@@ -2034,18 +2034,12 @@
               </div>
             `;
             
-            // Show appropriate button based on role
-            if (window.userRole === 'host') {
+            // Show appropriate button based on role - both hosts and listeners can add tracks
+            if (window.userRole === 'host' || window.userRole === 'listener') {
               const btn = document.createElement('button');
               btn.textContent = 'Add to Queue';
               btn.onclick = () => queueTrack(t.uri, `${t.name} - ${t.artists.map(a => a.name).join(', ')}`);
               li.appendChild(btn);
-            } else if (window.userRole === 'listener') {
-              // Listeners get a message about voting instead
-              const listenerMsg = document.createElement('small');
-              listenerMsg.style.cssText = 'color: #2196F3; font-style: italic; margin-left: 10px;';
-              listenerMsg.textContent = '(Vote on queued tracks!)';
-              li.appendChild(listenerMsg);
             }
             
             ul.appendChild(li);
@@ -2065,8 +2059,8 @@
             text-align: center;
           `;
           infoDiv.innerHTML = `
-            💡 <strong>Listener Mode:</strong> You can see tracks but can't add them to the queue.<br>
-            Head to the queue section to vote on tracks that are already queued!
+            💡 <strong>Listener Mode:</strong> You can add tracks to the queue and vote on them.<br>
+            Only the host can control playback (play/pause/skip).
           `;
           ul.appendChild(infoDiv);
         }
@@ -2327,7 +2321,12 @@
             <strong style="font-size: 1.1em;">🎧 Welcome, Anonymous Listener!</strong><br><br>
             <div style="display: flex; justify-content: space-around; flex-wrap: wrap; gap: 15px; margin: 15px 0;">
               <div style="flex: 1; min-width: 120px; text-align: center;">
-                <div style="font-size: 1.5em; margin-bottom: 5px;">🗳️</div>
+                <div style="font-size: 1.5em; margin-bottom: 5px;">➕</div>
+                <strong>Add Tracks</strong><br>
+                <small style="color: #ccc;">Queue music from host's playlists</small>
+              </div>
+              <div style="flex: 1; min-width: 120px; text-align: center;">
+                <div style="font-size: 1.5em; margin-bottom: 5px;">�️</div>
                 <strong>Vote on Tracks</strong><br>
                 <small style="color: #ccc;">Help decide what plays next</small>
               </div>
@@ -2335,11 +2334,6 @@
                 <div style="font-size: 1.5em; margin-bottom: 5px;">💬</div>
                 <strong>Chat Anonymously</strong><br>
                 <small style="color: #ccc;">Talk with other listeners</small>
-              </div>
-              <div style="flex: 1; min-width: 120px; text-align: center;">
-                <div style="font-size: 1.5em; margin-bottom: 5px;">🎵</div>
-                <strong>Browse Host Playlists</strong><br>
-                <small style="color: #ccc;">See what's available</small>
               </div>
             </div>
             <small style="color: #ccc; font-style: italic;">

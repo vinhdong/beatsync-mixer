@@ -376,10 +376,17 @@ def handle_connect(auth):
 
 @socketio.on("queue_add")
 def handle_queue_add(data):
-    """Add track to queue - Host only"""
-    # Check if user has host role
-    if session.get("role") != "host":
-        emit("error", {"message": "Only hosts can add tracks to the queue"})
+    """Add track to queue - Available to hosts and listeners"""
+    print(f"DEBUG: queue_add called with data: {data}")
+    print(f"DEBUG: session data: {dict(session)}")
+    
+    # Check if user has any role (host or listener)
+    user_role = session.get("role")
+    print(f"DEBUG: user_role: {user_role}")
+    
+    if not user_role:
+        print("DEBUG: No user role found, emitting error")
+        emit("error", {"message": "You must join as a listener or host to add tracks"})
         return
     
     # Persist the new queue item
@@ -388,15 +395,24 @@ def handle_queue_add(data):
         qi = QueueItem(track_uri=data.get("track_uri"), track_name=data.get("track_name"))
         db.add(qi)
         db.commit()
+        print(f"DEBUG: Successfully added track to queue: {qi.track_uri}")
+        
         # Broadcast to all clients with timestamp
+        queue_data = {
+            "track_uri": qi.track_uri,
+            "track_name": qi.track_name,
+            "timestamp": qi.timestamp.isoformat() if qi.timestamp else None,
+        }
+        print(f"DEBUG: Broadcasting queue_updated with data: {queue_data}")
+        
         emit(
             "queue_updated",
-            {
-                "track_uri": qi.track_uri,
-                "track_name": qi.track_name,
-                "timestamp": qi.timestamp.isoformat() if qi.timestamp else None,
-            },
+            queue_data,
+            broadcast=True
         )
+    except Exception as e:
+        print(f"DEBUG: Error adding track to queue: {e}")
+        emit("error", {"message": "Failed to add track to queue"})
     finally:
         db.close()
 
@@ -436,7 +452,8 @@ def handle_vote_add(data):
 
         # Broadcast updated vote counts
         emit(
-            "vote_updated", {"track_uri": track_uri, "up_votes": up_votes, "down_votes": down_votes}
+            "vote_updated", {"track_uri": track_uri, "up_votes": up_votes, "down_votes": down_votes},
+            broadcast=True
         )
 
     finally:
@@ -475,6 +492,7 @@ def handle_chat_message(data):
                 "message": chat_msg.message,
                 "timestamp": chat_msg.timestamp.isoformat() if chat_msg.timestamp else None,
             },
+            broadcast=True
         )
 
     finally:
@@ -809,10 +827,10 @@ def select_role():
             <div class="emoji">🎧</div>
             <h2>Join as Listener</h2>
             <div class="role-description">
-                Vote on tracks, chat with others, and enjoy the collaborative experience.
-                <br><strong>Note:</strong> Limited control over playback
+                Add tracks to queue, vote on music, chat with others, and enjoy the collaborative experience.
+                <br><strong>No login required!</strong>
             </div>
-            <a href="/login?role=listener" class="role-btn listener-btn">👥 Join Session</a>
+            <button onclick="joinAsAnonymousListener()" class="role-btn listener-btn">🎧 Join as Anonymous Listener</button>
         </div>
         
         <div class="restart-section">
@@ -875,6 +893,32 @@ def select_role():
                         console.error('Error restarting session:', error);
                         alert('❌ Network error while restarting session. Please try again.');
                     }}
+                }}
+            }}
+            
+            // Join as anonymous listener function
+            async function joinAsAnonymousListener() {{
+                try {{
+                    const response = await fetch('/set-listener', {{
+                        method: 'POST',
+                        headers: {{
+                            'Content-Type': 'application/json'
+                        }}
+                    }});
+                    
+                    if (response.ok) {{
+                        const data = await response.json();
+                        console.log('Anonymous listener session created:', data);
+                        
+                        // Redirect to main page
+                        window.location.href = '/';
+                    }} else {{
+                        console.error('Failed to create anonymous listener session');
+                        alert('Failed to join as listener. Please try again.');
+                    }}
+                }} catch (error) {{
+                    console.error('Error setting up anonymous listener:', error);
+                    alert('Error joining as listener. Please check your connection.');
                 }}
             }}
         </script>
@@ -1006,10 +1050,10 @@ def restart_session():
             db.commit()
             
             # Emit events to all connected clients
-            socketio.emit('queue_cleared', broadcast=True)
-            socketio.emit('votes_cleared', broadcast=True)
-            socketio.emit('chat_cleared', broadcast=True)
-            socketio.emit('session_restarted', broadcast=True)
+            socketio.emit('queue_cleared')
+            socketio.emit('votes_cleared')
+            socketio.emit('chat_cleared')
+            socketio.emit('session_restarted')
             
         except Exception as e:
             db.rollback()
