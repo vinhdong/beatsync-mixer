@@ -46,7 +46,16 @@ DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///database/beatsync.db")
 # Fix Heroku Postgres URL for SQLAlchemy 2.0 compatibility
 if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
-engine = create_engine(DATABASE_URL, echo=False)
+
+# Configure engine with connection pooling for better performance
+engine = create_engine(
+    DATABASE_URL, 
+    echo=False,
+    pool_size=10,
+    max_overflow=20,
+    pool_pre_ping=True,
+    pool_recycle=300
+)
 SessionLocal = sessionmaker(bind=engine)
 Base = declarative_base()
 
@@ -337,160 +346,200 @@ def index():
     return html_content
 
 
-# Socket.IO setup
+# Socket.IO setup with production optimizations
 async_mode = os.getenv("FLASK_SOCKETIO_ASYNC_MODE", "gevent")
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode=async_mode)
+socketio = SocketIO(
+    app, 
+    cors_allowed_origins="*", 
+    async_mode=async_mode,
+    ping_timeout=60,
+    ping_interval=25,
+    max_http_buffer_size=16384,
+    allow_upgrades=True,
+    transports=['polling', 'websocket']
+)
 
 
 @socketio.on("connect")
 def handle_connect(auth):
-    print("Client connected")
-    db = SessionLocal()
+    print(f"Client connected: {request.sid}")
     try:
-        # Send existing queued items
-        items = db.query(QueueItem).order_by(QueueItem.timestamp).all()
-        for item in items:
-            emit(
-                "queue_updated",
-                {
-                    "track_uri": item.track_uri,
-                    "track_name": item.track_name,
-                    "timestamp": item.timestamp.isoformat() if item.timestamp else None,
-                },
-            )
+        db = SessionLocal()
+        try:
+            # Send existing queued items
+            items = db.query(QueueItem).order_by(QueueItem.timestamp).all()
+            for item in items:
+                emit(
+                    "queue_updated",
+                    {
+                        "track_uri": item.track_uri,
+                        "track_name": item.track_name,
+                        "timestamp": item.timestamp.isoformat() if item.timestamp else None,
+                    },
+                )
 
-        # Send existing votes
-        votes = db.query(Vote).all()
-        vote_counts = {}
-        for vote in votes:
-            if vote.track_uri not in vote_counts:
-                vote_counts[vote.track_uri] = {"up": 0, "down": 0}
-            vote_counts[vote.track_uri][vote.vote_type] += 1
+            # Send existing votes
+            votes = db.query(Vote).all()
+            vote_counts = {}
+            for vote in votes:
+                if vote.track_uri not in vote_counts:
+                    vote_counts[vote.track_uri] = {"up": 0, "down": 0}
+                vote_counts[vote.track_uri][vote.vote_type] += 1
 
-        for track_uri, counts in vote_counts.items():
-            emit(
-                "vote_updated",
-                {"track_uri": track_uri, "up_votes": counts["up"], "down_votes": counts["down"]},
-            )
+            for track_uri, counts in vote_counts.items():
+                emit(
+                    "vote_updated",
+                    {"track_uri": track_uri, "up_votes": counts["up"], "down_votes": counts["down"]},
+                )
 
-        # Send existing chat messages
-        messages = db.query(ChatMessage).order_by(ChatMessage.timestamp).limit(50).all()
-        for msg in messages:
-            emit(
-                "chat_message",
-                {
-                    "user": msg.user,
-                    "message": msg.message,
-                    "timestamp": msg.timestamp.isoformat() if msg.timestamp else None,
-                },
-            )
-    finally:
-        db.close()
+            # Send existing chat messages
+            messages = db.query(ChatMessage).order_by(ChatMessage.timestamp).limit(50).all()
+            for msg in messages:
+                emit(
+                    "chat_message",
+                    {
+                        "user": msg.user,
+                        "message": msg.message,
+                        "timestamp": msg.timestamp.isoformat() if msg.timestamp else None,
+                    },
+                )
+        finally:
+            db.close()
+    except Exception as e:
+        print(f"Error in connect handler: {e}")
+        emit("error", {"message": "Connection error occurred"})
+
+
+@socketio.on("disconnect")
+def handle_disconnect():
+    print(f"Client disconnected: {request.sid}")
+
+
+@socketio.on_error_default
+def default_error_handler(e):
+    print(f"Socket.IO error: {e}")
+    return False
 
 
 @socketio.on("queue_add")
 def handle_queue_add(data):
     """Add track to queue - Host only"""
-    # Check if user has host role
-    if session.get("role") != "host":
-        emit("error", {"message": "Only hosts can add tracks to the queue"})
-        return
-    
-    # Persist the new queue item
-    db = SessionLocal()
     try:
-        qi = QueueItem(track_uri=data.get("track_uri"), track_name=data.get("track_name"))
-        db.add(qi)
-        db.commit()
-        # Broadcast to all clients with timestamp
-        emit(
-            "queue_updated",
-            {
-                "track_uri": qi.track_uri,
-                "track_name": qi.track_name,
-                "timestamp": qi.timestamp.isoformat() if qi.timestamp else None,
-            },
-        )
-    finally:
-        db.close()
+        # Check if user has host role
+        if session.get("role") != "host":
+            emit("error", {"message": "Only hosts can add tracks to the queue"})
+            return
+        
+        # Persist the new queue item
+        db = SessionLocal()
+        try:
+            qi = QueueItem(track_uri=data.get("track_uri"), track_name=data.get("track_name"))
+            db.add(qi)
+            db.commit()
+            # Broadcast to all clients with timestamp
+            socketio.emit(
+                "queue_updated",
+                {
+                    "track_uri": qi.track_uri,
+                    "track_name": qi.track_name,
+                    "timestamp": qi.timestamp.isoformat() if qi.timestamp else None,
+                },
+                broadcast=True
+            )
+        finally:
+            db.close()
+    except Exception as e:
+        print(f"Error in queue_add: {e}")
+        emit("error", {"message": "Failed to add track to queue"})
 
 
 @socketio.on("vote_add")
 def handle_vote_add(data):
     """Handle voting on tracks - Available to all authenticated users"""
-    # Check if user is authenticated (has any role)
-    if not session.get("role"):
-        emit("error", {"message": "You must be logged in to vote"})
-        return
-    
-    track_uri = data.get("track_uri")
-    vote_type = data.get("vote")  # 'up' or 'down'
-    user_id = session.get("user_id", "anonymous")  # Use session user_id
-
-    if vote_type not in ["up", "down"]:
-        emit("error", {"message": "Invalid vote type"})
-        return
-
-    db = SessionLocal()
     try:
-        # Add the vote
-        vote = Vote(track_uri=track_uri, vote_type=vote_type, user_id=user_id)
-        db.add(vote)
-        db.commit()
+        # Check if user is authenticated (has any role)
+        if not session.get("role"):
+            emit("error", {"message": "You must be logged in to vote"})
+            return
+        
+        track_uri = data.get("track_uri")
+        vote_type = data.get("vote")  # 'up' or 'down'
+        user_id = session.get("user_id", "anonymous")  # Use session user_id
 
-        # Calculate updated vote counts for this track
-        up_votes = (
-            db.query(Vote).filter(Vote.track_uri == track_uri, Vote.vote_type == "up").count()
-        )
+        if vote_type not in ["up", "down"]:
+            emit("error", {"message": "Invalid vote type"})
+            return
 
-        down_votes = (
-            db.query(Vote).filter(Vote.track_uri == track_uri, Vote.vote_type == "down").count()
-        )
+        db = SessionLocal()
+        try:
+            # Add the vote
+            vote = Vote(track_uri=track_uri, vote_type=vote_type, user_id=user_id)
+            db.add(vote)
+            db.commit()
 
-        # Broadcast updated vote counts
-        emit(
-            "vote_updated", {"track_uri": track_uri, "up_votes": up_votes, "down_votes": down_votes}
-        )
+            # Calculate updated vote counts for this track
+            up_votes = (
+                db.query(Vote).filter(Vote.track_uri == track_uri, Vote.vote_type == "up").count()
+            )
 
-    finally:
-        db.close()
+            down_votes = (
+                db.query(Vote).filter(Vote.track_uri == track_uri, Vote.vote_type == "down").count()
+            )
+
+            # Broadcast updated vote counts
+            socketio.emit(
+                "vote_updated", 
+                {"track_uri": track_uri, "up_votes": up_votes, "down_votes": down_votes},
+                broadcast=True
+            )
+
+        finally:
+            db.close()
+    except Exception as e:
+        print(f"Error in vote_add: {e}")
+        emit("error", {"message": "Failed to process vote"})
 
 
 @socketio.on("chat_message")
 def handle_chat_message(data):
     """Handle chat messages - Available to all authenticated users"""
-    # Check if user is authenticated (has any role)
-    if not session.get("role"):
-        emit("error", {"message": "You must be logged in to chat"})
-        return
-    
-    # Use session data for user identification
-    user = session.get("display_name", "Anonymous")
-    message = data.get("message", "")
-
-    if not message.strip():
-        emit("error", {"message": "Message cannot be empty"})
-        return
-
-    db = SessionLocal()
     try:
-        # Persist the chat message
-        chat_msg = ChatMessage(user=user, message=message.strip())
-        db.add(chat_msg)
-        db.commit()
+        # Check if user is authenticated (has any role)
+        if not session.get("role"):
+            emit("error", {"message": "You must be logged in to chat"})
+            return
+        
+        # Use session data for user identification
+        user = session.get("display_name", "Anonymous")
+        message = data.get("message", "")
 
-        # Broadcast to all clients
-        emit(
-            "chat_message",
-            {
-                "user": chat_msg.user,
-                "message": chat_msg.message,
-                "timestamp": chat_msg.timestamp.isoformat() if chat_msg.timestamp else None,
-            },
-        )
+        if not message.strip():
+            emit("error", {"message": "Message cannot be empty"})
+            return
 
-    finally:
-        db.close()
+        db = SessionLocal()
+        try:
+            # Persist the chat message
+            chat_msg = ChatMessage(user=user, message=message.strip())
+            db.add(chat_msg)
+            db.commit()
+
+            # Broadcast to all clients
+            socketio.emit(
+                "chat_message",
+                {
+                    "user": chat_msg.user,
+                    "message": chat_msg.message,
+                    "timestamp": chat_msg.timestamp.isoformat() if chat_msg.timestamp else None,
+                },
+                broadcast=True
+            )
+
+        finally:
+            db.close()
+    except Exception as e:
+        print(f"Error in chat_message: {e}")
+        emit("error", {"message": "Failed to send message"})
 
 
 # Queue management routes
