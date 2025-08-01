@@ -1,5 +1,6 @@
 Flask==2.3.3
 Flask-SocketIO==5.3.6
+Flask-Caching==2.1.0
 SQLAlchemy>=2.0.34
 Authlib==1.2.1
 python-dotenv==1.0.0

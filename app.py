@@ -8,12 +8,18 @@ from sqlalchemy import create_engine, Column, Integer, String, DateTime
 from sqlalchemy.orm import sessionmaker, declarative_base
 from authlib.integrations.flask_client import OAuth
 from flask_socketio import SocketIO, emit
+from flask_caching import Cache
 
 load_dotenv()
 
 # Initialize Flask app with static folder
 app = Flask(__name__, static_folder="frontend", static_url_path="")
 app.config["SECRET_KEY"] = os.getenv("FLASK_SECRET")
+
+# Configure caching
+app.config['CACHE_TYPE'] = 'SimpleCache'  # In-memory cache for development
+app.config['CACHE_DEFAULT_TIMEOUT'] = 300  # 5 minutes
+cache = Cache(app)
 
 
 # OAuth setup for Spotify
@@ -150,12 +156,41 @@ def callback():
 
 # Fetch playlists
 @app.route("/playlists")
+@cache.cached(timeout=300, key_prefix='playlists')  # Cache for 5 minutes
 def playlists():
     token = session.get("spotify_token")
     if not token:
         return redirect(url_for("login"))
-    resp = oauth.spotify.get("https://api.spotify.com/v1/me/playlists", token=token)
-    return jsonify(resp.json())
+    
+    # Fetch playlists with pagination and limit to improve performance
+    params = {
+        'limit': 50,  # Max allowed by Spotify API
+        'offset': 0
+    }
+    resp = oauth.spotify.get("https://api.spotify.com/v1/me/playlists", token=token, params=params)
+    
+    if resp.status_code != 200:
+        return jsonify({"error": "Failed to fetch playlists"}), resp.status_code
+    
+    data = resp.json()
+    
+    # Return only essential data to reduce response size
+    simplified_playlists = {
+        "items": [
+            {
+                "id": playlist["id"],
+                "name": playlist["name"],
+                "description": playlist.get("description", ""),
+                "tracks": {"total": playlist["tracks"]["total"]},
+                "images": playlist.get("images", [])[:1],  # Only first image
+                "owner": {"display_name": playlist["owner"]["display_name"]}
+            }
+            for playlist in data.get("items", [])
+        ],
+        "total": data.get("total", 0)
+    }
+    
+    return jsonify(simplified_playlists)
 
 
 # Fetch tracks for a given playlist
@@ -164,10 +199,52 @@ def playlist_tracks(playlist_id):
     token = session.get("spotify_token")
     if not token:
         return redirect(url_for("login"))
+    
+    # Get pagination parameters
+    limit = min(int(request.args.get('limit', 50)), 50)  # Max 50 per request
+    offset = int(request.args.get('offset', 0))
+    
+    params = {
+        'limit': limit,
+        'offset': offset,
+        'fields': 'items(track(id,name,artists(name),album(name,images),uri,duration_ms)),total,offset,limit'
+    }
+    
     resp = oauth.spotify.get(
-        f"https://api.spotify.com/v1/playlists/{playlist_id}/tracks", token=token
+        f"https://api.spotify.com/v1/playlists/{playlist_id}/tracks", 
+        token=token, 
+        params=params
     )
-    return jsonify(resp.json())
+    
+    if resp.status_code != 200:
+        return jsonify({"error": "Failed to fetch tracks"}), resp.status_code
+    
+    data = resp.json()
+    
+    # Return simplified track data for better performance
+    simplified_tracks = {
+        "items": [
+            {
+                "track": {
+                    "id": item["track"]["id"] if item["track"] else None,
+                    "name": item["track"]["name"] if item["track"] else "Unknown",
+                    "artists": [{"name": artist["name"]} for artist in item["track"]["artists"]] if item["track"] and item["track"]["artists"] else [],
+                    "album": {
+                        "name": item["track"]["album"]["name"] if item["track"] and item["track"]["album"] else "Unknown",
+                        "images": item["track"]["album"]["images"][:1] if item["track"] and item["track"]["album"] and item["track"]["album"]["images"] else []
+                    },
+                    "uri": item["track"]["uri"] if item["track"] else None,
+                    "duration_ms": item["track"]["duration_ms"] if item["track"] else 0
+                }
+            }
+            for item in data.get("items", []) if item.get("track")
+        ],
+        "total": data.get("total", 0),
+        "offset": data.get("offset", 0),
+        "limit": data.get("limit", limit)
+    }
+    
+    return jsonify(simplified_tracks)
 
 
 # Get Last.fm recommendations for a queued track

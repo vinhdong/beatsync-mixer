@@ -195,6 +195,22 @@
       text-align: right;
     }
 
+    /* Loading spinner */
+    .loading-spinner {
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      border: 2px solid #333;
+      border-radius: 50%;
+      border-top-color: #1db954;
+      animation: spin 1s ease-in-out infinite;
+      margin-right: 10px;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
     /* Main content area */
     .main-content {
       max-width: 1200px;
@@ -1831,6 +1847,10 @@
 
     async function loadPlaylists() {
       try {
+        // Show loading indicator
+        const playlistList = document.getElementById('playlist-list');
+        playlistList.innerHTML = '<div style="text-align: center; padding: 20px; color: #666;"><div class="loading-spinner"></div> Loading playlists...</div>';
+        
         const res = await fetch('/playlists');
         if (res.redirected) {
           document.getElementById('login').style.display = 'block';
@@ -1849,7 +1869,7 @@
         }
         
         const ul = document.getElementById('playlist-list');
-        ul.innerHTML = ''; // Clear existing playlists
+        ul.innerHTML = ''; // Clear loading indicator
         
         // Show message if guest mode and no playlists
         if (data.guest_mode && data.items.length === 0) {
@@ -1921,14 +1941,19 @@
 
     async function loadPlaylistTracks(playlistId) {
       try {
+        // Show loading indicator
+        document.getElementById('playlists').style.display = 'none';
+        document.getElementById('tracks').style.display = 'block';
+        
+        const trackList = document.getElementById('track-list');
+        trackList.innerHTML = '<div style="text-align: center; padding: 20px; color: #666;"><div class="loading-spinner"></div> Loading tracks...</div>';
+        
         const res = await fetch(`/playlists/${playlistId}/tracks`);
         if (res.redirected) {
           window.location = res.url;
           return;
         }
         const data = await res.json();
-        document.getElementById('playlists').style.display = 'none';
-        document.getElementById('tracks').style.display = 'block';
         
         // Update tracks section title
         const tracksTitle = document.querySelector('#tracks h2');
@@ -1939,7 +1964,7 @@
         }
         
         const ul = document.getElementById('track-list');
-        ul.innerHTML = '';
+        ul.innerHTML = ''; // Clear loading indicator
 
         // Handle guest mode with no tracks
         if (data.guest_mode && data.items.length === 0) {
