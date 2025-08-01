@@ -36,7 +36,7 @@ lastfm = pylast.LastFMNetwork(
 
 
 # Database setup for persistent queue
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///beatsync.db")
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///database/beatsync.db")
 engine = create_engine(DATABASE_URL, echo=False)
 SessionLocal = sessionmaker(bind=engine)
 Base = declarative_base()

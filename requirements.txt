@@ -8,6 +8,7 @@ eventlet==0.33.3
 gunicorn==21.2.0
 websocket-client==1.8.0
 pylast==5.2.0
+psycopg2-binary==2.9.7
 
 # Development and Testing
 pytest>=7.4.0
