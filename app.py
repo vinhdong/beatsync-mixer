@@ -2,6 +2,8 @@ import os
 import datetime
 import requests
 import pylast
+import eventlet
+eventlet.monkey_patch()
 from dotenv import load_dotenv
 from flask import Flask, jsonify, session, redirect, url_for, send_from_directory, abort, request, request
 from sqlalchemy import create_engine, Column, Integer, String, DateTime
