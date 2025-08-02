@@ -191,16 +191,18 @@ def exchange_token_with_fallback(auth_code, redirect_uri):
             
             # For IP-based URLs, add Host header for SSL verification
             request_headers = headers.copy()
+            verify_ssl = True
             if ip_address_pattern(url):
                 request_headers['Host'] = 'accounts.spotify.com'
-                print(f"Using Host header for IP-based request")
+                verify_ssl = False  # Disable SSL verification for direct IP connections
+                print(f"Using Host header for IP-based request, SSL verification disabled")
             
             response = session.post(
                 url,
                 data=token_data,
                 headers=request_headers,
                 timeout=(10, 20),  # Longer timeout for token exchange
-                verify=True  # Keep SSL verification
+                verify=verify_ssl  # Use SSL verification based on connection type
             )
             
             print(f"Response status: {response.status_code}")
@@ -260,7 +262,7 @@ def simple_token_exchange_bypass_dns(auth_code, redirect_uri):
         data=token_data,
         headers=headers,
         timeout=(15, 30),
-        verify=True  # SSL verification should work with Host header
+        verify=False  # Disable SSL verification for direct IP connection
     )
     
     print(f"Direct IP response status: {response.status_code}")
