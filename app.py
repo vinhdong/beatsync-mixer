@@ -1,6 +1,7 @@
 import os
 from datetime import datetime, timezone, timedelta
-import socket  # Add socket import at the top level
+import spotipy
+from spotipy.oauth2 import SpotifyOAuth
 import requests
 import pylast
 import time
@@ -9,7 +10,6 @@ from dotenv import load_dotenv
 from flask import Flask, jsonify, session, redirect, url_for, send_from_directory, abort, request, request
 from sqlalchemy import create_engine, Column, Integer, String, DateTime
 from sqlalchemy.orm import sessionmaker, declarative_base
-from authlib.integrations.flask_client import OAuth
 from flask_socketio import SocketIO, emit
 from flask_caching import Cache
 from flask_session import Session
@@ -53,272 +53,16 @@ app.config['CACHE_TYPE'] = 'SimpleCache'  # In-memory cache for development
 app.config['CACHE_DEFAULT_TIMEOUT'] = 300  # 5 minutes
 cache = Cache(app)
 
-
-# OAuth setup for Spotify with improved timeout and state handling
-oauth = OAuth(app)
-
-# Configure requests session with better timeout and retry handling
-import requests
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
-
-# Pre-resolve critical hostnames for better reliability
-SPOTIFY_IPS = []
-
-def resolve_spotify_ips():
-    """Pre-resolve Spotify IPs to avoid DNS issues during token exchange"""
-    global SPOTIFY_IPS
-    try:
-        import socket
-        # Try to resolve accounts.spotify.com to IPv4 addresses
-        hostnames = ['accounts.spotify.com', 'api.spotify.com']
-        resolved_ips = []
-        
-        for hostname in hostnames:
-            try:
-                addr_info = socket.getaddrinfo(hostname, 443, socket.AF_INET, socket.SOCK_STREAM)
-                for info in addr_info:
-                    ip = info[4][0]
-                    if ip not in resolved_ips:
-                        resolved_ips.append(ip)
-                        print(f"Resolved {hostname} to {ip}")
-            except Exception as e:
-                print(f"Failed to resolve {hostname}: {e}")
-        
-        # If DNS resolution completely failed, use known Spotify IP ranges as fallback
-        if not resolved_ips:
-            print("DNS resolution failed completely, using fallback IPs")
-            # These are known Spotify API server IPs (may change, but better than nothing)
-            fallback_ips = [
-                '35.186.224.24',  # accounts.spotify.com observed IP
-                '35.186.224.25',  # Common Spotify API server
-                '34.102.136.180', # Another common Spotify API server
-            ]
-            resolved_ips = fallback_ips
-            print(f"Using fallback IPs: {fallback_ips}")
-        
-        SPOTIFY_IPS = resolved_ips
-        print(f"Pre-resolved Spotify IPs: {SPOTIFY_IPS}")
-        return len(SPOTIFY_IPS) > 0
-    except Exception as e:
-        print(f"Failed to pre-resolve Spotify IPs: {e}")
-        # Even if this fails, provide basic fallback
-        SPOTIFY_IPS = ['35.186.224.24']
-        return True
-
-# Configure requests session with aggressive retry and timeout handling for Heroku
-def create_spotify_session():
-    """Create a requests session optimized for Heroku -> Spotify connectivity"""
-    import requests
-    from requests.adapters import HTTPAdapter
-    from urllib3.util.retry import Retry
-    
-    session = requests.Session()
-    
-    # Fast-fail retry strategy for Heroku network issues
-    retry_strategy = Retry(
-        total=2,  # Reduced total retries
-        connect=1,  # Only 1 connect retry per attempt
-        read=1,  # Only 1 read retry per attempt
-        status=1,
-        backoff_factor=0.1,  # Very short backoff
-        status_forcelist=[429, 500, 502, 503, 504],
-        allowed_methods=["HEAD", "GET", "PUT", "DELETE", "OPTIONS", "TRACE", "POST"],
-        raise_on_status=False
-    )
-    
-    adapter = HTTPAdapter(
-        max_retries=retry_strategy,
-        pool_connections=2,
-        pool_maxsize=2,
-        pool_block=False  # Don't block on pool exhaustion
-    )
-    
-    session.mount("http://", adapter)
-    session.mount("https://", adapter)
-    
-    # Conservative timeouts - very short for first attempt to fail fast
-    session.timeout = (3, 8)  # 3s connect, 8s read - fail fast to try IP fallbacks
-    
-    # Minimal headers to avoid any filtering
-    session.headers.update({
-        'User-Agent': 'BeatSync-Mixer/1.0',
-        'Accept': 'application/json'
-    })
-    
-    return session
-
-def exchange_token_with_fallback(auth_code, redirect_uri):
-    """Exchange authorization code for access token with IP fallback"""
-    import base64
-    
-    client_id = os.getenv("SPOTIFY_CLIENT_ID")
-    client_secret = os.getenv("SPOTIFY_CLIENT_SECRET")
-    
-    # Prepare token exchange data
-    token_data = {
-        'grant_type': 'authorization_code',
-        'code': auth_code,
-        'redirect_uri': redirect_uri
-    }
-    
-    # Prepare authorization header
-    auth_string = f"{client_id}:{client_secret}"
-    auth_bytes = auth_string.encode('utf-8')
-    auth_b64 = base64.b64encode(auth_bytes).decode('utf-8')
-    
-    headers = {
-        'Authorization': f'Basic {auth_b64}',
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'User-Agent': 'BeatSync-Mixer/1.0'
-    }
-    
-    # Create session optimized for Heroku
-    session = create_spotify_session()
-    
-    # Build list of URLs to try - start with hostname, then IPs
-    urls_to_try = ['https://accounts.spotify.com/api/token']
-    
-    # Add IP-based URLs as fallbacks
-    for ip in SPOTIFY_IPS:
-        urls_to_try.append(f'https://{ip}/api/token')
-    
-    last_error = None
-    
-    for i, url in enumerate(urls_to_try):
-        try:
-            print(f"Attempt {i+1}/{len(urls_to_try)}: Trying token exchange with {url}")
-            
-            # For IP-based URLs, add Host header for SSL verification
-            request_headers = headers.copy()
-            verify_ssl = True
-            if ip_address_pattern(url):
-                request_headers['Host'] = 'accounts.spotify.com'
-                verify_ssl = False  # Disable SSL verification for direct IP connections
-                print(f"Using Host header for IP-based request, SSL verification disabled")
-            
-            response = session.post(
-                url,
-                data=token_data,
-                headers=request_headers,
-                timeout=(3, 8),  # Much shorter timeout to fail fast and try IP fallbacks
-                verify=verify_ssl  # Use SSL verification based on connection type
-            )
-            
-            print(f"Response status: {response.status_code}")
-            
-            if response.status_code == 200:
-                print(f"Token exchange successful with {url}!")
-                return response.json()
-            else:
-                print(f"Token exchange failed with status {response.status_code}: {response.text}")
-                last_error = f"HTTP {response.status_code}: {response.text}"
-                continue
-                
-        except Exception as e:
-            print(f"Token exchange failed with {url}: {str(e)}")
-            last_error = str(e)
-            continue
-    
-    # If all attempts failed
-    raise Exception(f"All token exchange attempts failed. Last error: {last_error}")
-
-def simple_token_exchange_bypass_dns(auth_code, redirect_uri):
-    """Simple token exchange that bypasses DNS completely using known IP"""
-    import requests
-    import base64
-    
-    client_id = os.getenv("SPOTIFY_CLIENT_ID")
-    client_secret = os.getenv("SPOTIFY_CLIENT_SECRET")
-    
-    # Use the most recently observed working IP for accounts.spotify.com
-    spotify_ip = '35.186.224.24'  # This was working in our tests
-    
-    # Prepare token exchange data
-    token_data = {
-        'grant_type': 'authorization_code',
-        'code': auth_code,
-        'redirect_uri': redirect_uri
-    }
-    
-    # Prepare authorization header
-    auth_string = f"{client_id}:{client_secret}"
-    auth_bytes = auth_string.encode('utf-8')
-    auth_b64 = base64.b64encode(auth_bytes).decode('utf-8')
-    
-    headers = {
-        'Authorization': f'Basic {auth_b64}',
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Host': 'accounts.spotify.com',  # Required for SSL verification
-        'User-Agent': 'BeatSync-Mixer/1.0'
-    }
-    
-    url = f'https://{spotify_ip}/api/token'
-    
-    print(f"Direct IP token exchange with {url}")
-    
-    response = requests.post(
-        url,
-        data=token_data,
-        headers=headers,
-        timeout=(5, 10),  # Shorter timeout for direct IP
-        verify=False  # Disable SSL verification for direct IP connection
-    )
-    
-    print(f"Direct IP response status: {response.status_code}")
-    
-    if response.status_code == 200:
-        print("Direct IP token exchange successful!")
-        return response.json()
-    else:
-        print(f"Direct IP token exchange failed: {response.status_code} - {response.text}")
-        raise Exception(f"Direct IP token exchange failed: {response.status_code} - {response.text}")
-
-def ip_address_pattern(url):
-    """Check if URL contains an IP address instead of hostname"""
-    import re
-    ip_pattern = r'https?://\d+\.\d+\.\d+\.\d+'
-    return re.match(ip_pattern, url) is not None
-
-# Force IPv4 DNS resolution globally to fix Heroku IPv6 routing issues
-def force_ipv4_dns():
-    """Force Python to use IPv4 DNS resolution to avoid Heroku IPv6 issues"""
-    original_getaddrinfo = socket.getaddrinfo
-    
-    def ipv4_only_getaddrinfo(*args, **kwargs):
-        """Custom getaddrinfo that filters out IPv6 addresses"""
-        try:
-            results = original_getaddrinfo(*args, **kwargs)
-            # Filter to only IPv4 results (AF_INET = 2)
-            ipv4_results = [result for result in results if result[0] == socket.AF_INET]
-            if ipv4_results:
-                return ipv4_results
-            # If no IPv4 results, fall back to original results
-            return results
-        except Exception:
-            # If anything goes wrong, fall back to original function
-            return original_getaddrinfo(*args, **kwargs)
-    
-    socket.getaddrinfo = ipv4_only_getaddrinfo
-    print("Forced IPv4 DNS resolution for Heroku compatibility")
-
-# Apply DNS fixes immediately
-force_ipv4_dns()
-resolve_spotify_ips()
-
-oauth.register(
-    name="spotify",
+# Spotipy OAuth setup - clean and reliable
+spotify_oauth = SpotifyOAuth(
     client_id=os.getenv("SPOTIFY_CLIENT_ID"),
     client_secret=os.getenv("SPOTIFY_CLIENT_SECRET"),
-    access_token_url="https://accounts.spotify.com/api/token",
-    authorize_url="https://accounts.spotify.com/authorize",
-    client_kwargs={
-        "scope": "user-read-playback-state user-modify-playback-state streaming playlist-read-private user-read-private user-read-email",
-        "timeout": 60,  # Reasonable timeout
-    },
-    # Additional OAuth settings
-    server_metadata_url=None,  # Don't auto-discover, use explicit URLs
-    authorize_params={'show_dialog': 'false'},  # Don't force login dialog every time
+    redirect_uri=os.getenv("SPOTIFY_REDIRECT_URI"),
+    scope="user-read-playback-state user-modify-playback-state streaming playlist-read-private user-read-private user-read-email",
+    show_dialog=False,
+    cache_path=None,  # Don't use file-based cache, we'll handle tokens manually
+    requests_timeout=10,  # Short timeout to fail fast
+    open_browser=False
 )
 
 
@@ -505,13 +249,7 @@ def login():
         
         session['requested_role'] = requested_role
         
-        # Get the redirect URI from environment (should be set for Heroku)
-        redirect_uri = os.getenv("SPOTIFY_REDIRECT_URI")
-        if not redirect_uri:
-            print("ERROR: SPOTIFY_REDIRECT_URI not set!")
-            return redirect("/select-role?error=oauth_failed")
-        
-        print(f"Initiating OAuth flow with redirect URI: {redirect_uri}")
+        print(f"Initiating OAuth flow for role: {requested_role}")
         
         # Ensure session is properly initialized before OAuth
         if not session.get('initialized'):
@@ -521,8 +259,11 @@ def login():
         # Make session permanent to ensure it persists through OAuth flow
         session.permanent = True
         
-        # Always use fresh OAuth state
-        return oauth.spotify.authorize_redirect(redirect_uri)
+        # Use Spotipy's OAuth to get authorization URL
+        auth_url = spotify_oauth.get_authorize_url()
+        print(f"Redirecting to Spotify OAuth: {auth_url}")
+        
+        return redirect(auth_url)
         
     except Exception as e:
         print(f"Login route error: {e}")
@@ -539,9 +280,13 @@ def callback():
     print(f"Session at callback start: {dict(session)}")
     
     try:
-        # Manual token exchange using our custom session to avoid DNS issues
+        # Get authorization code from callback
         code = request.args.get('code')
-        state = request.args.get('state')
+        error = request.args.get('error')
+        
+        if error:
+            print(f"OAuth error: {error}")
+            return redirect("/select-role?error=oauth_failed")
         
         if not code:
             print("No authorization code received")
@@ -549,45 +294,25 @@ def callback():
         
         print(f"Received authorization code, exchanging for token...")
         
-        # Try the robust token exchange function with IP fallbacks first
+        # Use Spotipy's built-in token exchange - clean and reliable
         try:
-            token = exchange_token_with_fallback(code, os.getenv("SPOTIFY_REDIRECT_URI"))
-            print("Successfully obtained Spotify access token with fallback method")
+            token_info = spotify_oauth.get_access_token(code)
+            print("Successfully obtained Spotify access token with Spotipy")
         except Exception as e:
-            print(f"Fallback token exchange failed: {e}")
-            print("Attempting direct IP bypass method...")
-            
-            # If that fails, try the simple DNS bypass method
-            try:
-                token = simple_token_exchange_bypass_dns(code, os.getenv("SPOTIFY_REDIRECT_URI"))
-                print("Successfully obtained Spotify access token with DNS bypass")
-            except Exception as e2:
-                print(f"DNS bypass token exchange also failed: {e2}")
-                return redirect("/select-role?error=oauth_failed")
+            print(f"Spotipy token exchange failed: {e}")
+            return redirect("/select-role?error=oauth_failed")
         
         # Store token in session
-        session["spotify_token"] = token
+        session["spotify_token"] = token_info
         
-        # Get user profile using our custom session
+        # Get user profile using Spotipy
         print("Fetching user profile...")
         try:
-            profile_session = create_spotify_session()
-            user_response = profile_session.get(
-                "https://api.spotify.com/v1/me", 
-                headers={"Authorization": f"Bearer {token['access_token']}"},
-                timeout=(10, 20)
-            )
-            
-            if user_response.status_code == 200:
-                user_data = user_response.json()
-                user_id = user_data.get("id")
-                display_name = user_data.get("display_name", user_id)
-                print(f"Successfully fetched user profile: {user_id}")
-            else:
-                print("Failed to fetch user profile, using defaults")
-                user_id = f"user_{int(time.time())}"
-                display_name = "Spotify User"
-                
+            sp = spotipy.Spotify(auth=token_info['access_token'])
+            user_data = sp.me()
+            user_id = user_data.get("id")
+            display_name = user_data.get("display_name", user_id)
+            print(f"Successfully fetched user profile: {user_id}")
         except Exception as e:
             print(f"User profile fetch failed: {e}")
             # Continue with default user info if profile fetch fails
@@ -650,93 +375,83 @@ def callback():
 @app.route("/playlists")
 @cache.cached(timeout=300, key_prefix='playlists')  # Cache for 5 minutes
 def playlists():
-    token = session.get("spotify_token")
-    if not token:
+    sp = get_spotify_client()
+    if not sp:
         return redirect(url_for("login"))
     
-    # Fetch playlists with pagination and limit to improve performance
-    params = {
-        'limit': 50,  # Max allowed by Spotify API
-        'offset': 0
-    }
-    resp = oauth.spotify.get("https://api.spotify.com/v1/me/playlists", token=token, params=params)
-    
-    if resp.status_code != 200:
-        return jsonify({"error": "Failed to fetch playlists"}), resp.status_code
-    
-    data = resp.json()
-    
-    # Return only essential data to reduce response size
-    simplified_playlists = {
-        "items": [
-            {
-                "id": playlist["id"],
-                "name": playlist["name"],
-                "description": playlist.get("description", ""),
-                "tracks": {"total": playlist["tracks"]["total"]},
-                "images": playlist.get("images", [])[:1],  # Only first image
-                "owner": {"display_name": playlist["owner"]["display_name"]}
-            }
-            for playlist in data.get("items", [])
-        ],
-        "total": data.get("total", 0)
-    }
-    
-    return jsonify(simplified_playlists)
+    try:
+        # Fetch playlists with pagination and limit to improve performance
+        data = sp.current_user_playlists(limit=50, offset=0)
+        
+        # Return only essential data to reduce response size
+        simplified_playlists = {
+            "items": [
+                {
+                    "id": playlist["id"],
+                    "name": playlist["name"],
+                    "description": playlist.get("description", ""),
+                    "tracks": {"total": playlist["tracks"]["total"]},
+                    "images": playlist.get("images", [])[:1],  # Only first image
+                    "owner": {"display_name": playlist["owner"]["display_name"]}
+                }
+                for playlist in data.get("items", [])
+            ],
+            "total": data.get("total", 0)
+        }
+        
+        return jsonify(simplified_playlists)
+    except Exception as e:
+        print(f"Error fetching playlists: {e}")
+        return jsonify({"error": "Failed to fetch playlists"}), 500
 
 
 # Fetch tracks for a given playlist
 @app.route("/playlists/<playlist_id>/tracks")
 def playlist_tracks(playlist_id):
-    token = session.get("spotify_token")
-    if not token:
+    sp = get_spotify_client()
+    if not sp:
         return redirect(url_for("login"))
     
-    # Get pagination parameters
-    limit = min(int(request.args.get('limit', 50)), 50)  # Max 50 per request
-    offset = int(request.args.get('offset', 0))
-    
-    params = {
-        'limit': limit,
-        'offset': offset,
-        'fields': 'items(track(id,name,artists(name),album(name,images),uri,duration_ms)),total,offset,limit'
-    }
-    
-    resp = oauth.spotify.get(
-        f"https://api.spotify.com/v1/playlists/{playlist_id}/tracks", 
-        token=token, 
-        params=params
-    )
-    
-    if resp.status_code != 200:
-        return jsonify({"error": "Failed to fetch tracks"}), resp.status_code
-    
-    data = resp.json()
-    
-    # Return simplified track data for better performance
-    simplified_tracks = {
-        "items": [
-            {
-                "track": {
-                    "id": item["track"]["id"] if item["track"] else None,
-                    "name": item["track"]["name"] if item["track"] else "Unknown",
-                    "artists": [{"name": artist["name"]} for artist in item["track"]["artists"]] if item["track"] and item["track"]["artists"] else [],
-                    "album": {
-                        "name": item["track"]["album"]["name"] if item["track"] and item["track"]["album"] else "Unknown",
-                        "images": item["track"]["album"]["images"][:1] if item["track"] and item["track"]["album"] and item["track"]["album"]["images"] else []
-                    },
-                    "uri": item["track"]["uri"] if item["track"] else None,
-                    "duration_ms": item["track"]["duration_ms"] if item["track"] else 0
+    try:
+        # Get pagination parameters
+        limit = min(int(request.args.get('limit', 50)), 50)  # Max 50 per request
+        offset = int(request.args.get('offset', 0))
+        
+        # Fetch tracks with Spotipy
+        data = sp.playlist_tracks(
+            playlist_id, 
+            limit=limit, 
+            offset=offset,
+            fields='items(track(id,name,artists(name),album(name,images),uri,duration_ms)),total,offset,limit'
+        )
+        
+        # Return simplified track data for better performance
+        simplified_tracks = {
+            "items": [
+                {
+                    "track": {
+                        "id": item["track"]["id"] if item["track"] else None,
+                        "name": item["track"]["name"] if item["track"] else "Unknown",
+                        "artists": [{"name": artist["name"]} for artist in item["track"]["artists"]] if item["track"] and item["track"]["artists"] else [],
+                        "album": {
+                            "name": item["track"]["album"]["name"] if item["track"] and item["track"]["album"] else "Unknown",
+                            "images": item["track"]["album"]["images"][:1] if item["track"] and item["track"]["album"] and item["track"]["album"]["images"] else []
+                        },
+                        "uri": item["track"]["uri"] if item["track"] else None,
+                        "duration_ms": item["track"]["duration_ms"] if item["track"] else 0
+                    }
                 }
-            }
-            for item in data.get("items", []) if item.get("track")
-        ],
-        "total": data.get("total", 0),
-        "offset": data.get("offset", 0),
-        "limit": data.get("limit", limit)
-    }
-    
-    return jsonify(simplified_tracks)
+                for item in data.get("items", []) if item.get("track")
+            ],
+            "total": data.get("total", 0),
+            "offset": data.get("offset", 0),
+            "limit": data.get("limit", limit)
+        }
+        
+        return jsonify(simplified_tracks)
+    except Exception as e:
+        print(f"Error fetching playlist tracks: {e}")
+        return jsonify({"error": "Failed to fetch tracks"}), 500
 
 
 # Get Last.fm recommendations for a queued track
@@ -744,8 +459,8 @@ def playlist_tracks(playlist_id):
 def recommend(track_uri):
     """Get similar tracks from Last.fm for a queued track"""
     # First, try to get track info from Spotify API
-    token = session.get("spotify_token")
-    if not token:
+    sp = get_spotify_client()
+    if not sp:
         return jsonify({"error": "Not authenticated"}), 401
     
     try:
@@ -755,13 +470,8 @@ def recommend(track_uri):
         
         track_id = track_uri.split(":")[-1]
         
-        # Get track info from Spotify
-        resp = oauth.spotify.get(f"https://api.spotify.com/v1/tracks/{track_id}", token=token)
-        
-        if resp.status_code != 200:
-            return jsonify({"error": "Failed to get track info from Spotify"}), 500
-        
-        track_data = resp.json()
+        # Get track info from Spotify using Spotipy
+        track_data = sp.track(track_id)
         artist = track_data["artists"][0]["name"]
         title = track_data["name"]
         
@@ -1169,8 +879,8 @@ def play_track():
     if session.get("role") != "host":
         return abort(403)
     
-    token = session.get("spotify_token")
-    if not token:
+    sp = get_spotify_client()
+    if not sp:
         return jsonify({"error": "Not authenticated"}), 401
     
     try:
@@ -1178,36 +888,22 @@ def play_track():
         track_uri = data.get("track_uri")
         device_id = data.get("device_id")
         
-        # Prepare the request payload
-        payload = {}
-        if track_uri:
-            payload["uris"] = [track_uri]
-        
-        # If device_id is provided, include it in the query parameters
-        url = "https://api.spotify.com/v1/me/player/play"
-        if device_id:
-            url += f"?device_id={device_id}"
-        
         if track_uri:
             # Play specific track
-            resp = oauth.spotify.put(url, json=payload, token=token)
+            sp.start_playback(device_id=device_id, uris=[track_uri])
         else:
             # Resume playback
-            resp = oauth.spotify.put(url, token=token)
+            sp.start_playback(device_id=device_id)
         
-        if resp.status_code == 204:
-            return jsonify({"status": "success"})
-        elif resp.status_code == 404:
+        return jsonify({"status": "success"})
+        
+    except spotipy.exceptions.SpotifyException as e:
+        if e.http_status == 404:
             return jsonify({"error": "No active device found. Please start Spotify on a device or use the web player."}), 404
         else:
-            error_msg = f"Playback failed (HTTP {resp.status_code})"
-            try:
-                error_data = resp.json()
-                if "error" in error_data and "message" in error_data["error"]:
-                    error_msg = error_data["error"]["message"]
-            except:
-                pass
-            return jsonify({"error": error_msg}), resp.status_code
+            return jsonify({"error": str(e)}), e.http_status
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
             
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -1219,21 +915,13 @@ def pause_track():
     if session.get("role") != "host":
         return abort(403)
     
-    token = session.get("spotify_token")
-    if not token:
+    sp = get_spotify_client()
+    if not sp:
         return jsonify({"error": "Not authenticated"}), 401
     
     try:
-        resp = oauth.spotify.put(
-            "https://api.spotify.com/v1/me/player/pause",
-            token=token
-        )
-        
-        if resp.status_code == 204:
-            return jsonify({"status": "success"})
-        else:
-            return jsonify({"error": "Pause failed"}), resp.status_code
-            
+        sp.pause_playback()
+        return jsonify({"status": "success"})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -1244,21 +932,13 @@ def next_track():
     if session.get("role") != "host":
         return abort(403)
     
-    token = session.get("spotify_token")
-    if not token:
+    sp = get_spotify_client()
+    if not sp:
         return jsonify({"error": "Not authenticated"}), 401
     
     try:
-        resp = oauth.spotify.post(
-            "https://api.spotify.com/v1/me/player/next",
-            token=token
-        )
-        
-        if resp.status_code == 204:
-            return jsonify({"status": "success"})
-        else:
-            return jsonify({"error": "Next track failed"}), resp.status_code
-            
+        sp.next_track()
+        return jsonify({"status": "success"})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -1266,23 +946,16 @@ def next_track():
 @app.route("/playback/status")
 def playback_status():
     """Get current playback status"""
-    token = session.get("spotify_token")
-    if not token:
+    sp = get_spotify_client()
+    if not sp:
         return jsonify({"error": "Not authenticated"}), 401
     
     try:
-        resp = oauth.spotify.get(
-            "https://api.spotify.com/v1/me/player",
-            token=token
-        )
-        
-        if resp.status_code == 200:
-            return jsonify(resp.json())
-        elif resp.status_code == 204:
-            return jsonify({"is_playing": False, "device": None})
+        playback = sp.current_playback()
+        if playback:
+            return jsonify(playback)
         else:
-            return jsonify({"error": "Failed to get playback status"}), resp.status_code
-            
+            return jsonify({"is_playing": False, "device": None})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -1658,21 +1331,13 @@ def restart_session():
 @app.route("/playback/devices")
 def get_devices():
     """Get available Spotify devices"""
-    token = session.get("spotify_token")
-    if not token:
+    sp = get_spotify_client()
+    if not sp:
         return jsonify({"error": "Not authenticated"}), 401
     
     try:
-        resp = oauth.spotify.get(
-            "https://api.spotify.com/v1/me/player/devices",
-            token=token
-        )
-        
-        if resp.status_code == 200:
-            return jsonify(resp.json())
-        else:
-            return jsonify({"error": "Failed to get devices"}), resp.status_code
-            
+        devices = sp.devices()
+        return jsonify(devices)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -1683,8 +1348,8 @@ def transfer_playback():
     if session.get("role") != "host":
         return abort(403)
     
-    token = session.get("spotify_token")
-    if not token:
+    sp = get_spotify_client()
+    if not sp:
         return jsonify({"error": "Not authenticated"}), 401
     
     try:
@@ -1694,24 +1359,9 @@ def transfer_playback():
         if not device_id:
             return jsonify({"error": "Device ID is required"}), 400
         
-        resp = oauth.spotify.put(
-            "https://api.spotify.com/v1/me/player",
-            json={"device_ids": [device_id], "play": False},
-            token=token
-        )
+        sp.transfer_playback(device_id=device_id, force_play=False)
+        return jsonify({"status": "success"})
         
-        if resp.status_code == 204:
-            return jsonify({"status": "success"})
-        else:
-            error_msg = f"Transfer failed (HTTP {resp.status_code})"
-            try:
-                error_data = resp.json()
-                if "error" in error_data and "message" in error_data["error"]:
-                    error_msg = error_data["error"]["message"]
-            except:
-                pass
-            return jsonify({"error": error_msg}), resp.status_code
-            
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -1753,7 +1403,6 @@ def get_next_track():
                     "down_votes": down_votes,
                     "net_score": net_score
                 }
-        
         if best_track:
             return jsonify(best_track)
         else:
@@ -1779,31 +1428,24 @@ def auto_play_next():
             return next_track_response
         
         next_track = next_track_response.get_json()
-        track_uri = next_track["track_uri"];
+        track_uri = next_track["track_uri"]
         
-        # Play the track
-        token = session.get("spotify_token")
-        if not token:
+        # Play the track using Spotipy
+        sp = get_spotify_client()
+        if not sp:
             return jsonify({"error": "Not authenticated"}), 401
         
         data = request.json or {}
         device_id = data.get("device_id")
         
-        url = "https://api.spotify.com/v1/me/player/play"
-        if device_id:
-            url += f"?device_id={device_id}"
+        sp.start_playback(device_id=device_id, uris=[track_uri])
         
-        resp = oauth.spotify.put(url, json={"uris": [track_uri]}, token=token)
+        return jsonify({
+            "status": "success", 
+            "track": next_track,
+            "message": f"Now playing: {next_track['track_name']} (Score: +{next_track['net_score']})"
+        })
         
-        if resp.status_code == 204:
-            return jsonify({
-                "status": "success", 
-                "track": next_track,
-                "message": f"Now playing: {next_track['track_name']} (Score: +{next_track['net_score']})"
-            })
-        else:
-            return jsonify({"error": "Failed to play track"}), resp.status_code
-            
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -1838,6 +1480,25 @@ def remove_from_queue(track_uri):
         return jsonify({"error": str(e)}), 500
     finally:
         db.close()
+
+
+# Helper function to create Spotipy client from session
+def get_spotify_client():
+    """Get a Spotipy client using the token from session"""
+    token_info = session.get("spotify_token")
+    if not token_info:
+        return None
+    
+    # Check if token needs refresh
+    if spotify_oauth.is_token_expired(token_info):
+        try:
+            token_info = spotify_oauth.refresh_access_token(token_info['refresh_token'])
+            session["spotify_token"] = token_info
+        except Exception as e:
+            print(f"Token refresh failed: {e}")
+            return None
+    
+    return spotipy.Spotify(auth=token_info['access_token'])
 
 
 if __name__ == "__main__":
