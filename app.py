@@ -124,8 +124,6 @@ oauth.register(
         "scope": "user-read-playback-state user-modify-playback-state streaming playlist-read-private user-read-private user-read-email",
         "timeout": 60,  # Reasonable timeout
     },
-    # Use the custom session with retry handling
-    session=create_spotify_session(),
     # Additional OAuth settings
     server_metadata_url=None,  # Don't auto-discover, use explicit URLs
     authorize_params={'show_dialog': 'false'},  # Don't force login dialog every time
@@ -349,16 +347,21 @@ def callback():
     print(f"Session at callback start: {dict(session)}")
     
     try:
-        # Get access token from Spotify
+        # Get access token from Spotify using our custom session
         token = oauth.spotify.authorize_access_token()
         print("Successfully obtained Spotify access token")
         
         # Store token in session
         session["spotify_token"] = token
-        oauth.spotify.token = token
         
-        # Get user profile
-        user_response = oauth.spotify.get("https://api.spotify.com/v1/me", token=token)
+        # Create custom session for API calls with DNS fixes
+        custom_session = create_spotify_session()
+        
+        # Get user profile using our custom session
+        user_response = custom_session.get(
+            "https://api.spotify.com/v1/me", 
+            headers={"Authorization": f"Bearer {token['access_token']}"}
+        )
         
         if user_response.status_code == 200:
             user_data = user_response.json()
