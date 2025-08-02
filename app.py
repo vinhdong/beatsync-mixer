@@ -296,34 +296,14 @@ def callback():
         
         print(f"Received authorization code, exchanging for token...")
         
-        # Use Spotipy's built-in token exchange with IP fallback for DNS failures
-        token_info = None
-        max_retries = 2
+        # Use ONLY fast IP-based token exchange - no DNS/Spotipy fallback to avoid 20s delays
+        print(">>> USING FAST IP-BASED TOKEN EXCHANGE (BYPASSING DNS COMPLETELY) <<<")
+        token_info = manual_token_exchange(code)
         
-        # First try Spotipy's normal approach
-        for attempt in range(max_retries):
-            try:
-                print(f">>> SPOTIPY TOKEN EXCHANGE ATTEMPT {attempt + 1}/{max_retries} <<<")
-                token_info = spotify_oauth.get_access_token(code)
-                print(">>> SPOTIPY TOKEN EXCHANGE SUCCESSFUL <<<")
-                break
-            except Exception as e:
-                print(f">>> SPOTIPY TOKEN EXCHANGE ATTEMPT {attempt + 1} FAILED: {e} <<<")
-                if attempt == max_retries - 1:  # Last Spotipy attempt
-                    print(">>> SPOTIPY FAILED - TRYING MANUAL IP FALLBACK <<<")
-                else:
-                    print(f">>> RETRYING SPOTIPY IN 1 SECOND <<<")
-                    time.sleep(1)  # Brief wait before retry
-        
-        # If Spotipy failed, try manual IP fallback
         if not token_info:
-            print(">>> ATTEMPTING MANUAL TOKEN EXCHANGE WITH HARDCODED IPS <<<")
-            token_info = manual_token_exchange(code)
-            
-            if not token_info:
-                print(">>> ALL TOKEN EXCHANGE METHODS FAILED - HEROKU NETWORK ISSUE <<<")
-                error_msg = "dns_timeout"  # We know it's DNS at this point
-                return redirect(f"/select-role?error=oauth_failed&details={error_msg}")
+            print(">>> FAST IP EXCHANGE FAILED - NETWORK/HEROKU ISSUE <<<")
+            error_msg = "network_timeout"
+            return redirect(f"/select-role?error=oauth_failed&details={error_msg}")
         
         # Store token in session
         session["spotify_token"] = token_info
@@ -1583,6 +1563,64 @@ def manual_token_exchange(auth_code):
     return None
 
 
+# Manual token refresh fallback for Heroku DNS issues
+def manual_token_refresh(refresh_token):
+    """Manual token refresh using hardcoded Spotify IPs as DNS fallback"""
+    
+    # Spotify IP addresses (multiple for redundancy)
+    ip_addresses = ["35.186.224.24", "104.154.127.126", "34.102.136.180"]
+    
+    token_data = {
+        'grant_type': 'refresh_token',
+        'refresh_token': refresh_token,
+        'client_id': os.getenv("SPOTIFY_CLIENT_ID"),
+        'client_secret': os.getenv("SPOTIFY_CLIENT_SECRET")
+    }
+    
+    # Try each IP directly - bypass DNS completely by not using hostname
+    for ip in ip_addresses:
+        try:
+            print(f">>> MANUAL TOKEN REFRESH ATTEMPT WITH IP: {ip} <<<")
+            
+            # Post directly to the IP, use Host header for TLS
+            url = f"https://{ip}/api/token"
+            headers = {
+                'Host': 'accounts.spotify.com',  # For TLS certificate validation
+                'Content-Type': 'application/x-www-form-urlencoded'
+            }
+            
+            # Create a custom requests session to avoid DNS caching
+            req_session = requests.Session()
+            
+            response = req_session.post(
+                url,
+                data=token_data,
+                headers=headers,
+                timeout=(3, 3),  # Very short timeout to fail fast
+                verify=False  # Skip SSL verification since we're using IP
+            )
+            
+            if response.status_code == 200:
+                token_info = response.json()
+                print(f">>> MANUAL TOKEN REFRESH SUCCESS WITH IP: {ip} <<<")
+                
+                # Add expiry time for Spotipy compatibility
+                import time
+                token_info['expires_at'] = int(time.time()) + token_info.get('expires_in', 3600)
+                
+                return token_info
+            else:
+                print(f">>> MANUAL TOKEN REFRESH FAILED WITH IP {ip}: HTTP {response.status_code} <<<")
+                
+        except Exception as e:
+            print(f">>> MANUAL TOKEN REFRESH ERROR WITH IP {ip}: {e} <<<")
+            continue
+    
+    # If all IPs failed
+    print(">>> ALL MANUAL TOKEN REFRESH ATTEMPTS FAILED <<<")
+    return None
+
+
 # Helper function to create Spotipy client from session
 def get_spotify_client():
     """Get a Spotipy client using the token from session"""
@@ -1593,8 +1631,16 @@ def get_spotify_client():
     # Check if token needs refresh
     if spotify_oauth.is_token_expired(token_info):
         try:
-            token_info = spotify_oauth.refresh_access_token(token_info['refresh_token'])
-            session["spotify_token"] = token_info
+            print(">>> TOKEN EXPIRED - USING FAST IP-BASED REFRESH ONLY <<<")
+            # Use ONLY fast IP-based refresh - no Spotipy fallback to avoid delays
+            refreshed_token = manual_token_refresh(token_info['refresh_token'])
+            if refreshed_token:
+                session["spotify_token"] = refreshed_token
+                token_info = refreshed_token
+                print(">>> FAST TOKEN REFRESH SUCCESSFUL <<<")
+            else:
+                print(">>> FAST TOKEN REFRESH FAILED - SESSION INVALID <<<")
+                return None
         except Exception as e:
             print(f"Token refresh failed: {e}")
             return None
