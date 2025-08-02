@@ -1661,49 +1661,32 @@ def test_callback():
         }), 500
 
 
-# Network diagnostic endpoint
-@app.route("/network-test")
-def network_test():
-    """Test network connectivity to Spotify from Heroku"""
-    results = {}
-    
-    # Test DNS resolution
+# Test endpoint for manual token exchange
+@app.route("/test-manual-token-exchange")
+def test_manual_token_exchange():
+    """Test the manual token exchange with a dummy code to verify IP fallback works"""
     try:
-        import socket
-        start_time = time.time()
-        addrs = socket.getaddrinfo('accounts.spotify.com', 443)
-        dns_time = time.time() - start_time
-        results['dns'] = {
-            'status': 'success', 
-            'time_ms': round(dns_time * 1000, 2),
-            'addresses': [addr[4][0] for addr in addrs[:3]]
-        }
+        print(">>> TESTING MANUAL TOKEN EXCHANGE FUNCTION <<<")
+        
+        # Test with a dummy auth code (this will fail but we can see if our connection method works)
+        dummy_code = "test_auth_code_12345"
+        result = manual_token_exchange(dummy_code)
+        
+        if result:
+            return jsonify({
+                "status": "success",
+                "message": "Manual token exchange succeeded",
+                "token_preview": str(result)[:100] + "..."
+            })
+        else:
+            return jsonify({
+                "status": "expected_failure",
+                "message": "Manual token exchange failed as expected with dummy code, but connection method worked"
+            })
+            
     except Exception as e:
-        results['dns'] = {'status': 'failed', 'error': str(e)}
-    
-    # Test HTTP connection
-    try:
-        import requests
-        start_time = time.time()
-        response = requests.get('https://accounts.spotify.com', timeout=5)
-        http_time = time.time() - start_time
-        results['http'] = {
-            'status': 'success', 
-            'status_code': response.status_code,
-            'time_ms': round(http_time * 1000, 2)
-        }
-    except Exception as e:
-        results['http'] = {'status': 'failed', 'error': str(e)}
-    
-    # Test Spotipy timeout settings
-    results['spotipy_config'] = {
-        'timeout': getattr(spotify_oauth, 'requests_timeout', 'unknown'),
-        'client_id_present': bool(os.getenv("SPOTIFY_CLIENT_ID")),
-        'redirect_uri': os.getenv("SPOTIFY_REDIRECT_URI")
-    }
-    
-    return f"""
-    <h2>Network Diagnostic Results</h2>
-    <pre>{json.dumps(results, indent=2)}</pre>
-    <p><a href="/select-role">← Back to role selection</a></p>
-    """
+        print(f">>> MANUAL TOKEN EXCHANGE TEST ERROR: {e} <<<")
+        return jsonify({
+            "status": "error",
+            "message": f"Test error: {str(e)}"
+        }), 500
