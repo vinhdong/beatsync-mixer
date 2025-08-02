@@ -335,8 +335,16 @@ def callback():
                         print(f"Found existing OAuth state key: {existing_state_key}, copying to expected key")
                         session[state_key] = session[existing_state_key]
                     else:
-                        print(f"No existing OAuth states found, creating new state key")
-                        session[state_key] = callback_state
+                        print(f"No existing OAuth states found, creating new state structure")
+                        # Create a proper state structure matching what the OAuth library expects
+                        import time
+                        session[state_key] = {
+                            'data': {
+                                'redirect_uri': 'https://beatsync-mixer-5715861af181.herokuapp.com/callback',
+                                'url': f'https://accounts.spotify.com/authorize?response_type=code&client_id={os.getenv("SPOTIFY_CLIENT_ID")}&redirect_uri=https://beatsync-mixer-5715861af181.herokuapp.com/callback&scope=user-read-playback-state+user-modify-playback-state+streaming+playlist-read-private+user-read-private+user-read-email&state={callback_state}&show_dialog=false'
+                            },
+                            'exp': time.time() + 600  # 10 minutes from now
+                        }
             
             # Try to get the access token with timeout handling
             token = oauth.spotify.authorize_access_token()
