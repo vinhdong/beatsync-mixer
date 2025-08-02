@@ -338,6 +338,7 @@ def callback():
                         print(f"No existing OAuth states found, creating new state structure")
                         # Create a proper state structure matching what the OAuth library expects
                         import time
+                        import os
                         session[state_key] = {
                             'data': {
                                 'redirect_uri': 'https://beatsync-mixer-5715861af181.herokuapp.com/callback',
