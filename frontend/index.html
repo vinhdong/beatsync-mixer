@@ -1209,12 +1209,19 @@
     };
 
     async function initializeSpotifyPlayer() {
+      // Only initialize Spotify Player for hosts
+      if (window.userRole !== 'host') {
+        console.log('Skipping Spotify Player initialization - user is not host');
+        return;
+      }
+      
       try {
         // Get access token from backend
         const tokenResponse = await fetch('/playback/spotify-token', {
           credentials: 'include'
         });
         if (!tokenResponse.ok) {
+          console.log('Failed to get Spotify token, status:', tokenResponse.status);
           updateConnectionStatus('🔴 Not authenticated');
           console.log('User not authenticated with Spotify');
           return;
@@ -1222,6 +1229,7 @@
         
         const tokenData = await tokenResponse.json();
         accessToken = tokenData.access_token;
+        console.log('Successfully retrieved access token for Spotify Player:', accessToken ? 'Token present' : 'No token');
 
         // Initialize the Spotify Player
         player = new Spotify.Player({
@@ -1242,7 +1250,28 @@
         player.addListener('authentication_error', ({ message }) => {
           console.error('Spotify Player authentication error:', message);
           updateConnectionStatus('🔴 Authentication error');
-          alert('Authentication error. Please refresh the page and log in again.');
+          // Only show popup for hosts, and make it less intrusive
+          if (window.userRole === 'host') {
+            console.log('Authentication error for host - this may indicate Premium account requirement or token issue');
+            // Show a less intrusive notification instead of alert
+            const errorDiv = document.createElement('div');
+            errorDiv.style.cssText = `
+              position: fixed; top: 120px; right: 20px; 
+              background: #f44336; color: white; padding: 15px; 
+              border-radius: 8px; z-index: 1001; max-width: 300px;
+              box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+            `;
+            errorDiv.innerHTML = `
+              <strong>⚠️ Spotify Player Authentication Issue</strong><br>
+              <small>This may require Spotify Premium or indicate a token issue. Music playback might not work.</small>
+              <button onclick="this.parentElement.remove()" style="float: right; background: none; border: none; color: white; font-size: 16px; cursor: pointer; margin-left: 10px;">×</button>
+            `;
+            document.body.appendChild(errorDiv);
+            // Auto-remove after 10 seconds
+            setTimeout(() => {
+              if (errorDiv.parentElement) errorDiv.remove();
+            }, 10000);
+          }
         });
 
         player.addListener('account_error', ({ message }) => {
