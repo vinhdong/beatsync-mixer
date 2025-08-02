@@ -1249,10 +1249,17 @@
 
         player.addListener('authentication_error', ({ message }) => {
           console.error('Spotify Player authentication error:', message);
+          console.error('This usually means missing scopes or invalid token');
           updateConnectionStatus('🔴 Authentication error');
           // Only show popup for hosts, and make it less intrusive
           if (window.userRole === 'host') {
-            console.log('Authentication error for host - this may indicate Premium account requirement or token issue');
+            console.log('Authentication error for host - checking token and scopes');
+            // Check what token we have
+            fetch('/playback/spotify-token', { credentials: 'include' })
+              .then(r => r.json())
+              .then(data => console.log('Current token data:', data))
+              .catch(e => console.error('Failed to get token info:', e));
+            
             // Show a less intrusive notification instead of alert
             const errorDiv = document.createElement('div');
             errorDiv.style.cssText = `
@@ -1263,14 +1270,14 @@
             `;
             errorDiv.innerHTML = `
               <strong>⚠️ Spotify Player Authentication Issue</strong><br>
-              <small>This may require Spotify Premium or indicate a token issue. Music playback might not work.</small>
+              <small>Error: ${message}<br>You may need to re-authenticate to get proper permissions for music playback.</small>
               <button onclick="this.parentElement.remove()" style="float: right; background: none; border: none; color: white; font-size: 16px; cursor: pointer; margin-left: 10px;">×</button>
             `;
             document.body.appendChild(errorDiv);
-            // Auto-remove after 10 seconds
+            // Auto-remove after 15 seconds
             setTimeout(() => {
               if (errorDiv.parentElement) errorDiv.remove();
-            }, 10000);
+            }, 15000);
           }
         });
 

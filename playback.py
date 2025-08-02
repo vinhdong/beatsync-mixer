@@ -15,11 +15,21 @@ def get_spotify_token():
     """Get current Spotify access token for Web Playback SDK"""
     token = session.get("spotify_token")
     if not token:
+        print("No spotify_token found in session")
         return jsonify({"error": "Not authenticated"}), 401
+    
+    access_token = token.get("access_token")
+    if not access_token:
+        print("No access_token found in token info")
+        return jsonify({"error": "No access token"}), 401
+    
+    print(f"Returning access token for Web Player (length: {len(access_token)})")
+    print(f"Token scopes: {token.get('scope', 'No scope info')}")
+    print(f"Token expires_in: {token.get('expires_in', 'No expiry info')}")
     
     # Return only the access token (not the full token object for security)
     return jsonify({
-        "access_token": token.get("access_token"),
+        "access_token": access_token,
         "expires_in": token.get("expires_in", 3600)
     })
 

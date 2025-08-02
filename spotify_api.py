@@ -19,7 +19,7 @@ spotify_oauth = SpotifyOAuth(
     client_id=os.getenv("SPOTIFY_CLIENT_ID"),
     client_secret=os.getenv("SPOTIFY_CLIENT_SECRET"),
     redirect_uri=os.getenv("SPOTIFY_REDIRECT_URI"),
-    scope="user-read-playback-state user-modify-playback-state playlist-read-private user-read-private user-read-email",
+    scope="user-read-playback-state user-modify-playback-state playlist-read-private user-read-private user-read-email streaming",
     cache_path=None  # Disable file caching
 )
 
