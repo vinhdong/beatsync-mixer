@@ -53,26 +53,250 @@ app.config['SESSION_COOKIE_DOMAIN'] = None  # Let Flask handle domain automatica
 # Initialize server-side session storage
 Session(app)
 
-# Configure caching
-# Configure caching with proper Redis SSL for Heroku
-redis_url = os.getenv('REDIS_URL')
-if redis_url:
-    app.config['CACHE_TYPE'] = 'RedisCache'
-    app.config['CACHE_REDIS_URL'] = redis_url
-    # Handle Heroku Redis SSL properly
-    if redis_url.startswith('rediss://'):
-        # For SSL Redis connections, we need to configure SSL context
-        app.config['CACHE_REDIS_CONNECTION_KWARGS'] = {
-            'ssl_cert_reqs': ssl.CERT_NONE,
-            'ssl_check_hostname': False,
-            'ssl_ca_certs': None
+# Manual Redis client to bypass Heroku DNS issues
+def create_manual_redis_client(redis_url):
+    """Create a Redis client using direct IP to bypass DNS issues"""
+    try:
+        import redis
+        from urllib.parse import urlparse
+        
+        # Parse the Redis URL
+        parsed = urlparse(redis_url)
+        
+        # Use known IP mapping for Heroku Redis hostnames
+        hostname_to_ip = {
+            'ec2-98-85-106-43.compute-1.amazonaws.com': '98.85.106.43'
         }
-    print("Using Redis cache for shared cache between dynos")
+        
+        ip_address = hostname_to_ip.get(parsed.hostname)
+        if not ip_address:
+            print(f"No IP mapping found for hostname: {parsed.hostname}")
+            return None
+        
+        # Create Redis connection with IP
+        redis_client = redis.Redis(
+            host=ip_address,
+            port=parsed.port or 6379,
+            password=parsed.password,
+            ssl=parsed.scheme == 'rediss',
+            ssl_cert_reqs=ssl.CERT_NONE,
+            ssl_check_hostname=False,
+            socket_timeout=5,
+            socket_connect_timeout=5,
+            health_check_interval=30
+        )
+        
+        # Test the connection
+        redis_client.ping()
+        print(f"Successfully connected to Redis at {ip_address}:{parsed.port}")
+        return redis_client
+        
+    except Exception as e:
+        print(f"Failed to create manual Redis client: {e}")
+        return None
+
+class ManualRedisCache:
+    """Manual Redis cache wrapper to bypass DNS issues"""
+    
+    def __init__(self, redis_client, default_timeout=300):
+        self.redis_client = redis_client
+        self.default_timeout = default_timeout
+    
+    def get(self, key):
+        """Get value from Redis cache"""
+        try:
+            if not self.redis_client:
+                return None
+            value = self.redis_client.get(f"cache:{key}")
+            if value:
+                import json
+                return json.loads(value.decode('utf-8'))
+            return None
+        except Exception as e:
+            print(f"Redis get error for key {key}: {e}")
+            return None
+    
+    def set(self, key, value, timeout=None):
+        """Set value in Redis cache"""
+        try:
+            if not self.redis_client:
+                return False
+            timeout = timeout or self.default_timeout
+            import json
+            serialized = json.dumps(value, default=str)
+            self.redis_client.setex(f"cache:{key}", timeout, serialized)
+            return True
+        except Exception as e:
+            print(f"Redis set error for key {key}: {e}")
+            return False
+    
+    def delete(self, key):
+        """Delete key from Redis cache"""
+        try:
+            if not self.redis_client:
+                return False
+            self.redis_client.delete(f"cache:{key}")
+            return True
+        except Exception as e:
+            print(f"Redis delete error for key {key}: {e}")
+            return False
+
+# In-memory cache for current dyno to avoid redundant Redis reads
+in_memory_cache = {
+    "host_playlists": None,
+    "cached_at": 0,
+    "cache_ttl": 300  # 5 minutes in-memory cache
+}
+
+def get_cached_playlists():
+    """Get playlists from in-memory cache first, then Redis if needed"""
+    current_time = time.time()
+    
+    # Check if we have fresh in-memory cache
+    if (in_memory_cache["host_playlists"] and 
+        current_time - in_memory_cache["cached_at"] < in_memory_cache["cache_ttl"]):
+        print("Serving playlists from in-memory cache (fastest)")
+        return in_memory_cache["host_playlists"]
+    
+    # Try Redis cache
+    try:
+        cached_data = cache.get("host_playlists_simplified")
+        if cached_data:
+            print("Serving playlists from Redis cache")
+            # Update in-memory cache to avoid Redis on next request
+            in_memory_cache["host_playlists"] = cached_data
+            in_memory_cache["cached_at"] = current_time
+            return cached_data
+    except Exception as e:
+        print(f"Redis cache read failed: {e}")
+    
+    print("No cached playlists available")
+    return None
+
+def invalidate_playlist_cache():
+    """Clear both in-memory and Redis playlist cache"""
+    in_memory_cache["host_playlists"] = None
+    in_memory_cache["cached_at"] = 0
+    try:
+        cache.delete("host_playlists_simplified")
+    except:
+        pass
+
+# Configure caching with manual Redis bypass for DNS issues
+redis_url = os.getenv('REDIS_URL')
+manual_redis_client = None
+use_manual_redis = False
+
+# In-memory cache per dyno to avoid redundant Redis reads
+in_memory_cache = {
+    'host_playlists': None,
+    'host_playlists_timestamp': None,
+    'cache_ttl': 300  # 5 minutes
+}
+
+def get_in_memory_cache(key):
+    """Get from in-memory cache if fresh"""
+    if key in in_memory_cache and in_memory_cache[f'{key}_timestamp']:
+        age = time.time() - in_memory_cache[f'{key}_timestamp']
+        if age < in_memory_cache['cache_ttl']:
+            return in_memory_cache[key]
+    return None
+
+def set_in_memory_cache(key, value):
+    """Set in-memory cache with timestamp"""
+    in_memory_cache[key] = value
+    in_memory_cache[f'{key}_timestamp'] = time.time()
+
+def clear_in_memory_cache(key=None):
+    """Clear specific key or all in-memory cache"""
+    if key:
+        in_memory_cache[key] = None
+        in_memory_cache[f'{key}_timestamp'] = None
+    else:
+        for k in list(in_memory_cache.keys()):
+            if not k.endswith('_ttl'):
+                in_memory_cache[k] = None
+
+def simplify_playlists_data(playlists_data):
+    """Convert full Spotify JSON to minimal cached format"""
+    if not playlists_data or not playlists_data.get('items'):
+        return None
+    
+    return {
+        "items": [
+            {
+                "id": playlist["id"],
+                "name": playlist["name"],
+                "description": playlist.get("description", ""),
+                "tracks": {"total": playlist["tracks"]["total"]},
+                "images": playlist.get("images", [])[:1],  # Only first image
+                "owner": {"display_name": playlist["owner"]["display_name"]}
+            }
+            for playlist in playlists_data.get("items", [])
+        ],
+        "total": playlists_data.get("total", 0)
+    }
+
+def cache_playlists_async(access_token, simplified_playlists):
+    """Cache playlists in background thread to avoid blocking login"""
+    def cache_worker():
+        try:
+            print("Background: Caching simplified playlists for listeners")
+            # Cache both the simplified data and the access token
+            cache.set("host_playlists_simplified", simplified_playlists, timeout=1800)
+            cache.set("host_access_token", access_token, timeout=1800)
+            
+            # Also update in-memory cache
+            set_in_memory_cache("host_playlists", simplified_playlists)
+            
+            print(f"Background: Successfully cached {len(simplified_playlists.get('items', []))} playlists")
+        except Exception as e:
+            print(f"Background: Error caching playlists: {e}")
+    
+    # Start background thread
+    thread = threading.Thread(target=cache_worker)
+    thread.daemon = True
+    thread.start()
+
+if redis_url:
+    try:
+        # Try to create a manual Redis client bypassing DNS
+        manual_redis_client = create_manual_redis_client(redis_url)
+        if manual_redis_client:
+            print("Using manual Redis client to bypass DNS issues")
+            cache = ManualRedisCache(manual_redis_client)
+            use_manual_redis = True
+        else:
+            print("Manual Redis failed, falling back to Flask-Caching with DNS")
+            app.config['CACHE_TYPE'] = 'RedisCache'
+            app.config['CACHE_REDIS_URL'] = redis_url
+            # Handle Heroku Redis SSL properly
+            if redis_url.startswith('rediss://'):
+                app.config['CACHE_REDIS_CONNECTION_KWARGS'] = {
+                    'ssl_cert_reqs': ssl.CERT_NONE,
+                    'ssl_check_hostname': False,
+                    'ssl_ca_certs': None
+                }
+            app.config['CACHE_DEFAULT_TIMEOUT'] = 300  # 5 minutes
+            cache = Cache(app)
+    except Exception as e:
+        print(f"Failed to create manual Redis client: {e}")
+        print("Using Flask-Caching with Redis")
+        app.config['CACHE_TYPE'] = 'RedisCache'
+        app.config['CACHE_REDIS_URL'] = redis_url
+        if redis_url.startswith('rediss://'):
+            app.config['CACHE_REDIS_CONNECTION_KWARGS'] = {
+                'ssl_cert_reqs': ssl.CERT_NONE,
+                'ssl_check_hostname': False,
+                'ssl_ca_certs': None
+            }
+        app.config['CACHE_DEFAULT_TIMEOUT'] = 300  # 5 minutes
+        cache = Cache(app)
 else:
     app.config['CACHE_TYPE'] = 'SimpleCache'
     print("Using SimpleCache for local development")
-app.config['CACHE_DEFAULT_TIMEOUT'] = 300  # 5 minutes
-cache = Cache(app)
+    app.config['CACHE_DEFAULT_TIMEOUT'] = 300  # 5 minutes
+    cache = Cache(app)
 
 # Spotipy OAuth setup with ultra-aggressive timeout settings for Heroku
 spotify_oauth = SpotifyOAuth(
@@ -270,26 +494,49 @@ def callback():
             with open(host_file, 'w') as f:
                 f.write(f"{user_id}|{display_name}")
             
-            # Pre-cache host's playlists for listeners
-            try:
-                print(f"Pre-caching playlists for new host: {display_name}")
-                playlists_data = manual_playlists_fetch(access_token)
-                if playlists_data:
-                    cache.set("host_playlists", playlists_data, timeout=1800)  # 30 minutes
-                    cache.set("host_access_token", access_token, timeout=1800)  # 30 minutes
-                    print(f"Successfully cached {len(playlists_data.get('items', []))} playlists for listeners")
-                    
-                    # Notify all connected listeners that playlists are now available
-                    socketio.emit('playlists_available', {
-                        'host_name': display_name,
-                        'playlist_count': len(playlists_data.get('items', []))
-                    })
-                    print("Notified listeners that playlists are available")
-                else:
-                    print("Failed to pre-cache playlists - API call failed")
-            except Exception as cache_error:
-                print(f"Error pre-caching playlists: {cache_error}")
-                # Don't fail the login process if caching fails
+            # Start asynchronous playlist caching - DON'T BLOCK LOGIN
+            def cache_playlists_async():
+                """Cache playlists in background thread to avoid blocking login"""
+                try:
+                    print(f"Background: Pre-caching playlists for new host: {display_name}")
+                    playlists_data = manual_playlists_fetch(access_token)
+                    if playlists_data:
+                        # Cache simplified playlists (much smaller payload)
+                        simplified_playlists = {
+                            "items": [
+                                {
+                                    "id": playlist["id"],
+                                    "name": playlist["name"],
+                                    "description": playlist.get("description", ""),
+                                    "tracks": {"total": playlist["tracks"]["total"]},
+                                    "images": playlist.get("images", [])[:1],
+                                    "owner": {"display_name": playlist["owner"]["display_name"]}
+                                }
+                                for playlist in playlists_data.get("items", [])
+                            ],
+                            "total": playlists_data.get("total", 0),
+                            "host_name": display_name,
+                            "cached_at": time.time()
+                        }
+                        
+                        cache.set("host_playlists_simplified", simplified_playlists, timeout=1800)
+                        cache.set("host_access_token", access_token, timeout=1800)
+                        print(f"Background: Successfully cached {len(simplified_playlists['items'])} simplified playlists")
+                        
+                        # Notify listeners asynchronously
+                        socketio.emit('playlists_available', {
+                            'host_name': display_name,
+                            'playlist_count': len(simplified_playlists['items'])
+                        })
+                        print("Background: Notified listeners that playlists are available")
+                    else:
+                        print("Background: Failed to fetch playlists")
+                except Exception as e:
+                    print(f"Background: Error caching playlists: {e}")
+            
+            # Start background caching - login continues immediately
+            threading.Thread(target=cache_playlists_async, daemon=True).start()
+            print(f"Started background playlist caching for {display_name}")
             
         else:
             # Set as listener
@@ -311,12 +558,11 @@ def callback():
         return redirect("/select-role?error=oauth_failed")
 
 
-# Fetch playlists
 @app.route("/playlists")
 def playlists():
     user_role = session.get("role")
     
-    # For hosts: use their own Spotify token
+    # For hosts: use their own Spotify token and cache in background
     if user_role == "host":
         token_info = session.get("spotify_token")
         if not token_info:
@@ -329,24 +575,14 @@ def playlists():
             return jsonify({"error": "Not authenticated", "redirect": "/login"}), 401
             
         try:
-            # Use manual IP-based fetch to avoid DNS timeouts
+            # Fetch playlists directly for host (fastest response)
             data = manual_playlists_fetch(access_token)
             
             if not data:
                 print("Manual playlists fetch failed - likely network issue")
                 return jsonify({"error": "Failed to fetch playlists"}), 500
             
-            # Cache playlists for listeners to access
-            print(f"Caching {len(data.get('items', []))} playlists for listeners")
-            try:
-                cache.set("host_playlists", data, timeout=1800)  # Cache for 30 minutes
-                cache.set("host_access_token", access_token, timeout=1800)  # Cache token for 30 minutes
-                print("Successfully cached playlists in Redis")
-            except Exception as cache_error:
-                print(f"Failed to cache playlists in Redis: {cache_error}")
-                # Continue without caching - at least host can see their own playlists
-            
-            # Return only essential data to reduce response size
+            # Prepare simplified response for host
             simplified_playlists = {
                 "items": [
                     {
@@ -354,7 +590,7 @@ def playlists():
                         "name": playlist["name"],
                         "description": playlist.get("description", ""),
                         "tracks": {"total": playlist["tracks"]["total"]},
-                        "images": playlist.get("images", [])[:1],  # Only first image
+                        "images": playlist.get("images", [])[:1],
                         "owner": {"display_name": playlist["owner"]["display_name"]}
                     }
                     for playlist in data.get("items", [])
@@ -363,40 +599,51 @@ def playlists():
                 "is_host": True
             }
             
+            # Cache asynchronously - don't block the response
+            def cache_playlists_async():
+                try:
+                    # Add metadata for listeners
+                    cached_playlists = simplified_playlists.copy()
+                    cached_playlists["host_name"] = session.get("display_name", "Host")
+                    cached_playlists["cached_at"] = time.time()
+                    
+                    # Update both Redis and in-memory cache
+                    cache.set("host_playlists_simplified", cached_playlists, timeout=1800)
+                    cache.set("host_access_token", access_token, timeout=1800)
+                    
+                    # Update in-memory cache
+                    in_memory_cache["host_playlists"] = cached_playlists
+                    in_memory_cache["cached_at"] = time.time()
+                    
+                    print(f"Background: Cached {len(simplified_playlists['items'])} playlists for listeners")
+                except Exception as e:
+                    print(f"Background: Cache update failed: {e}")
+            
+            # Start background caching
+            threading.Thread(target=cache_playlists_async, daemon=True).start()
+            
+            # Return immediately to host
             return jsonify(simplified_playlists)
             
         except Exception as e:
             print(f"Error fetching host playlists: {e}")
             return jsonify({"error": "Failed to fetch playlists"}), 500
     
-    # For listeners: serve cached host playlists
+    # For listeners: use optimized caching
     elif user_role == "listener":
         try:
-            # Try to get cached host playlists
-            cached_data = cache.get("host_playlists")
-            print(f"Listener requesting playlists - cached data: {cached_data is not None}")
+            # Use optimized cache lookup (in-memory first, then Redis)
+            cached_data = get_cached_playlists()
             
             if cached_data:
-                print(f"Serving {len(cached_data.get('items', []))} cached playlists to listener")
-                # Return the cached host playlists
-                simplified_playlists = {
-                    "items": [
-                        {
-                            "id": playlist["id"],
-                            "name": playlist["name"],
-                            "description": playlist.get("description", ""),
-                            "tracks": {"total": playlist["tracks"]["total"]},
-                            "images": playlist.get("images", [])[:1],  # Only first image
-                            "owner": {"display_name": playlist["owner"]["display_name"]}
-                        }
-                        for playlist in cached_data.get("items", [])
-                    ],
-                    "total": cached_data.get("total", 0),
+                # Return cached playlists with listener metadata
+                listener_response = {
+                    "items": cached_data["items"],
+                    "total": cached_data["total"],
                     "is_listener": True,
-                    "message": "Viewing host's playlists"
+                    "message": f"Viewing {cached_data.get('host_name', 'host')}'s playlists"
                 }
-                
-                return jsonify(simplified_playlists)
+                return jsonify(listener_response)
             else:
                 # No cached playlists available
                 return jsonify({
@@ -407,7 +654,7 @@ def playlists():
                 })
                 
         except Exception as e:
-            print(f"Error serving cached playlists to listener: {e}")
+            print(f"Error serving playlists to listener: {e}")
             return jsonify({
                 "items": [],
                 "total": 0,
@@ -1414,13 +1661,9 @@ def sign_out_host():
     if os.path.exists(host_file):
         os.remove(host_file)
     
-    # Clear session
-    session.clear()
-    
-    return jsonify({"status": "success", "message": "Signed out as host"})
-    host_file = 'current_host.txt'
-    if os.path.exists(host_file):
-        os.remove(host_file)
+    # Clear playlist caches
+    invalidate_playlist_cache()
+    print("Cleared playlist caches on host sign out")
     
     # Clear session
     session.clear()
