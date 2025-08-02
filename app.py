@@ -51,14 +51,10 @@ app.config['SESSION_COOKIE_DOMAIN'] = None  # Let Flask handle domain automatica
 Session(app)
 
 # Configure caching
-# Configure caching based on environment
-if os.getenv('REDIS_URL'):
-    app.config['CACHE_TYPE'] = 'RedisCache'
-    app.config['CACHE_REDIS_URL'] = os.getenv('REDIS_URL')
-    print("Using Redis cache for shared cache between dynos")
-else:
-    app.config['CACHE_TYPE'] = 'SimpleCache'  # In-memory cache for development
-    print("Using SimpleCache for local development")
+# Configure caching - temporarily use SimpleCache due to Redis SSL issues
+# TODO: Fix Redis SSL configuration for production
+app.config['CACHE_TYPE'] = 'SimpleCache'
+print("Using SimpleCache (Redis temporarily disabled due to SSL issues)")
 app.config['CACHE_DEFAULT_TIMEOUT'] = 300  # 5 minutes
 cache = Cache(app)
 
@@ -326,8 +322,13 @@ def playlists():
             
             # Cache playlists for listeners to access
             print(f"Caching {len(data.get('items', []))} playlists for listeners")
-            cache.set("host_playlists", data, timeout=1800)  # Cache for 30 minutes
-            cache.set("host_access_token", access_token, timeout=1800)  # Cache token for 30 minutes
+            try:
+                cache.set("host_playlists", data, timeout=1800)  # Cache for 30 minutes
+                cache.set("host_access_token", access_token, timeout=1800)  # Cache token for 30 minutes
+                print("Successfully cached playlists in Redis")
+            except Exception as cache_error:
+                print(f"Failed to cache playlists in Redis: {cache_error}")
+                # Continue without caching - at least host can see their own playlists
             
             # Return only essential data to reduce response size
             simplified_playlists = {
