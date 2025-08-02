@@ -297,7 +297,9 @@ def playlists():
                 return jsonify({"error": "Failed to fetch playlists"}), 500
             
             # Cache playlists for listeners to access
-            cache.set("host_playlists", data, timeout=300)  # Cache for 5 minutes
+            print(f"Caching {len(data.get('items', []))} playlists for listeners")
+            cache.set("host_playlists", data, timeout=1800)  # Cache for 30 minutes
+            cache.set("host_access_token", access_token, timeout=1800)  # Cache token for 30 minutes
             
             # Return only essential data to reduce response size
             simplified_playlists = {
@@ -327,8 +329,10 @@ def playlists():
         try:
             # Try to get cached host playlists
             cached_data = cache.get("host_playlists")
+            print(f"Listener requesting playlists - cached data: {cached_data is not None}")
             
             if cached_data:
+                print(f"Serving {len(cached_data.get('items', []))} cached playlists to listener")
                 # Return the cached host playlists
                 simplified_playlists = {
                     "items": [
@@ -393,11 +397,12 @@ def playlist_tracks(playlist_id):
             return jsonify({"error": "Not authenticated", "redirect": "/login"}), 401
             
         # Cache the host's token for listeners to use
-        cache.set("host_access_token", access_token, timeout=300)  # Cache for 5 minutes
+        cache.set("host_access_token", access_token, timeout=1800)  # Cache for 30 minutes
         
     # For listeners: use cached host token
     elif user_role == "listener":
         access_token = cache.get("host_access_token")
+        print(f"Listener requesting tracks - cached token available: {access_token is not None}")
         if not access_token:
             print("No cached host token available for listener")
             return jsonify({"error": "Host must be online to load tracks. Ask the host to access their playlists first."}), 503
@@ -952,6 +957,13 @@ def play_track():
         success = manual_start_playback(access_token, device_id, uris)
         
         if success:
+            # Broadcast playback state to all connected clients
+            socketio.emit('playback_started', {
+                'track_uri': track_uri,
+                'device_id': device_id,
+                'is_playing': True
+            })
+            print(f"Broadcasted playback started: {track_uri}")
             return jsonify({"status": "success"})
         else:
             return jsonify({"error": "Failed to start playback"}), 500
@@ -983,6 +995,12 @@ def pause_track():
         success = manual_pause_playback(access_token, device_id)
         
         if success:
+            # Broadcast pause state to all connected clients
+            socketio.emit('playback_paused', {
+                'device_id': device_id,
+                'is_playing': False
+            })
+            print("Broadcasted playback paused")
             return jsonify({"status": "success"})
         else:
             return jsonify({"error": "Failed to pause playback"}), 500

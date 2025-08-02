@@ -1002,6 +1002,95 @@
       }
     });
 
+    // Playback state events from host
+    socket.on("playback_started", data => {
+      console.log('Playback started:', data);
+      
+      // Update UI to show something is playing
+      if (data.track_uri) {
+        // Find the track in the queue and highlight it as playing
+        const trackElements = document.querySelectorAll(`li[data-track-uri="${data.track_uri}"]`);
+        trackElements.forEach(el => {
+          el.style.background = 'rgba(29, 185, 84, 0.2)';
+          el.style.border = '2px solid #1db954';
+          
+          // Add playing indicator
+          const playingIndicator = el.querySelector('.playing-indicator');
+          if (!playingIndicator) {
+            const indicator = document.createElement('span');
+            indicator.className = 'playing-indicator';
+            indicator.innerHTML = ' 🎵 Playing';
+            indicator.style.color = '#1db954';
+            indicator.style.fontWeight = 'bold';
+            el.appendChild(indicator);
+          }
+        });
+      }
+      
+      // Show notification for listeners
+      if (window.userRole === 'listener') {
+        const notification = document.createElement('div');
+        notification.style.cssText = `
+          position: fixed;
+          top: 20px;
+          right: 20px;
+          background: #1db954;
+          color: white;
+          padding: 12px 20px;
+          border-radius: 8px;
+          z-index: 1000;
+          font-weight: bold;
+        `;
+        notification.textContent = '🎵 Host started playing music';
+        document.body.appendChild(notification);
+        
+        setTimeout(() => {
+          if (notification.parentNode) {
+            notification.parentNode.removeChild(notification);
+          }
+        }, 3000);
+      }
+    });
+
+    socket.on("playback_paused", data => {
+      console.log('Playback paused:', data);
+      
+      // Remove playing indicators from all tracks
+      const playingIndicators = document.querySelectorAll('.playing-indicator');
+      playingIndicators.forEach(indicator => indicator.remove());
+      
+      // Remove highlight from all tracks
+      const trackElements = document.querySelectorAll('li[data-track-uri]');
+      trackElements.forEach(el => {
+        el.style.background = '';
+        el.style.border = '';
+      });
+      
+      // Show notification for listeners
+      if (window.userRole === 'listener') {
+        const notification = document.createElement('div');
+        notification.style.cssText = `
+          position: fixed;
+          top: 20px;
+          right: 20px;
+          background: #666;
+          color: white;
+          padding: 12px 20px;
+          border-radius: 8px;
+          z-index: 1000;
+          font-weight: bold;
+        `;
+        notification.textContent = '⏸️ Host paused the music';
+        document.body.appendChild(notification);
+        
+        setTimeout(() => {
+          if (notification.parentNode) {
+            notification.parentNode.removeChild(notification);
+          }
+        }, 3000);
+      }
+    });
+
     // Spotify Web Playback SDK variables
     let player = null;
     let deviceId = null;
