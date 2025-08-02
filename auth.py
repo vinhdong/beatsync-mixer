@@ -30,9 +30,27 @@ def login():
     try:
         requested_role = request.args.get('role', 'listener')
         
-        # Clear session when hosting to ensure fresh start
+        # Clear session and queue when hosting to ensure fresh start
         if requested_role == 'host':
             session.clear()
+            
+            # Also clear the queue for a fresh start
+            try:
+                from db import get_db, QueueItem, Vote
+                with get_db() as db:
+                    # Clear all votes and queue items
+                    db.query(Vote).delete()
+                    db.query(QueueItem).delete()
+                    
+                    # Emit queue cleared event to all connected clients
+                    from flask import current_app
+                    if hasattr(current_app, 'socketio'):
+                        current_app.socketio.emit('queue_cleared')
+                        current_app.socketio.emit('votes_cleared')
+                        
+                print("Cleared queue and votes for new host session")
+            except Exception as e:
+                print(f"Error clearing queue during host login: {e}")
         
         session['requested_role'] = requested_role
         
