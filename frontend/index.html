@@ -887,7 +887,7 @@
       </div>
     </div>
 
-    <div id="login">
+    <div id="login" style="display: none;">
       <div class="role-selection">
         <h2>Choose how to join BeatSync Mixer</h2>
         <div class="role-options">
@@ -966,6 +966,25 @@
 
   <script src="https://cdn.socket.io/4.5.0/socket.io.min.js"></script>
   <script>
+    // Immediate role initialization - run before any other code
+    (function() {
+      // Check if user role is injected from server
+      const role = window.userRole;
+      const loginDiv = document.getElementById('login');
+      
+      console.log('Immediate initialization - Role:', role);
+      
+      if (role && role !== 'guest' && loginDiv) {
+        // Hide login for authenticated users immediately
+        loginDiv.style.display = 'none';
+        console.log('Login div hidden for authenticated user');
+      } else if (!role && loginDiv) {
+        // Show login for unauthenticated users
+        loginDiv.style.display = 'block';
+        console.log('Login div shown for unauthenticated user');
+      }
+    })();
+
     const socket = io();
     let queueCount = 0;
     let currentUser = 'User_' + Math.random().toString(36).substr(2, 9); // Generate random user ID
