@@ -57,13 +57,32 @@ def create_app():
     @app.route("/")
     def index():
         """Serve front-end application"""
+        # Debug session state in detail
+        print(f"=== MAIN ROUTE SESSION DEBUG ===")
+        print(f"Session ID: {session.get('_id', 'No ID')}")
+        print(f"Session permanent: {session.permanent}")
+        print(f"Session modified: {getattr(session, 'modified', 'Unknown')}")
+        print(f"All session data: {dict(session)}")
+        print(f"=== END SESSION DEBUG ===")
+        
         # Check if user is authenticated - allow guest, host, and listener roles
         user_role = session.get("role")
         print(f"Main route - Session role: {user_role}, Session keys: {list(session.keys())}")
         
-        if not user_role or user_role not in ['guest', 'host', 'listener']:
-            print(f"No valid role found, redirecting to select-role. Current role: {user_role}")
-            return redirect("/select-role")
+        # More detailed role validation
+        if not user_role:
+            print(f"No role found in session, redirecting to select-role")
+            return redirect("/select-role?error=session_lost")
+        elif user_role not in ['guest', 'host', 'listener']:
+            print(f"Invalid role found: '{user_role}', redirecting to select-role")
+            return redirect("/select-role?error=invalid_role")
+        
+        # For hosts, also check if they have access token
+        if user_role == 'host' and not session.get('access_token'):
+            print(f"Host role but no access token, redirecting to re-authenticate")
+            return redirect("/select-role?error=auth_expired")
+        
+        print(f"Valid session found for role: {user_role}, serving main page")
         
         # Read the HTML file and inject role information
         html_path = os.path.join(app.static_folder, "index.html")

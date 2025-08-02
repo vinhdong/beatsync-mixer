@@ -35,6 +35,39 @@ def select_role():
             2. Clear your browser cache if the issue persists
         </div>
         """
+    elif error == 'session_lost':
+        error_message = """
+        <div style="background: #ffe6e6; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #e74c3c; color: #c0392b;">
+            <strong>⚠️ Session Lost</strong><br>
+            Your session was lost during authentication. This can happen due to session storage issues.<br><br>
+            <strong>Please try:</strong><br>
+            1. Clear your browser cookies and try again<br>
+            2. Use the "Clear Session & Try Again" buttons below<br>
+            3. If this persists, try a different browser
+        </div>
+        <div style="text-align: center; margin-bottom: 20px;">
+            <a href="/clear-session-and-login?role=host" style="background-color: #e74c3c; color: white; padding: 12px 24px; text-decoration: none; border-radius: 25px; font-weight: bold; display: inline-block; margin: 5px;">
+                🔄 Clear Session & Try Host Again
+            </a>
+            <a href="/clear-session-and-login?role=listener" style="background-color: #666; color: white; padding: 12px 24px; text-decoration: none; border-radius: 25px; font-weight: bold; display: inline-block; margin: 5px;">
+                🔄 Clear Session & Try Listener
+            </a>
+        </div>
+        """
+    elif error == 'invalid_role':
+        error_message = """
+        <div style="background: #ffe6e6; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #e74c3c; color: #c0392b;">
+            <strong>⚠️ Invalid Role</strong><br>
+            Your session contains an invalid role. Please select a new role below.
+        </div>
+        """
+    elif error == 'auth_expired':
+        error_message = """
+        <div style="background: #ffe6e6; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #e74c3c; color: #c0392b;">
+            <strong>⚠️ Authentication Expired</strong><br>
+            Your Spotify authentication has expired. Please log in again to continue as host.
+        </div>
+        """
     elif error == 'csrf_error':
         error_message = """
         <div style="background: #ffe6e6; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #e74c3c; color: #c0392b;">
@@ -407,5 +440,9 @@ def session_info():
         'refresh_token': session.get('refresh_token', '')[0:20] + '...' if session.get('refresh_token') else None,
         'display_name': session.get('display_name'),
         'authenticated': bool(session.get('access_token')),
-        'session_keys': list(session.keys())
+        'login_timestamp': session.get('login_timestamp'),
+        'session_permanent': session.permanent,
+        'session_id': session.get('_id', 'No ID'),
+        'session_keys': list(session.keys()),
+        'full_session': dict(session) if len(session.keys()) < 20 else 'Too many keys to display'
     })

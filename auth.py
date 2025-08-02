@@ -149,12 +149,36 @@ def callback():
         # Clear the requested role from session
         session.pop('requested_role', None)
         
-        # Ensure session is properly saved
+        # Ensure session is properly saved with explicit persistence
         session.permanent = True
+        
+        # Add additional session data for reliability
+        session['access_token'] = access_token
+        session['refresh_token'] = token_info.get('refresh_token', '')
+        session['authenticated'] = True
+        session['login_timestamp'] = datetime.now(timezone.utc).isoformat()
+        
+        # Force session save by modifying it
+        session.modified = True
+        
+        # Try to explicitly save the session
+        try:
+            from flask import current_app
+            if hasattr(current_app, 'session_interface'):
+                current_app.session_interface.save_session(current_app, session, None)
+                print("Explicitly saved session using session interface")
+        except Exception as e:
+            print(f"Could not explicitly save session: {e}")
         
         # Debug: Check session state before redirect
         print(f"Session state before redirect: role={session.get('role')}, user_id={session.get('user_id')}")
         print(f"Session keys: {list(session.keys())}")
+        print(f"Session authenticated: {session.get('authenticated')}")
+        print(f"Session permanent: {session.permanent}")
+        
+        # Small delay to ensure session is saved (especially for filesystem sessions)
+        import time
+        time.sleep(0.1)
         
         return redirect("/")
         

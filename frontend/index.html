@@ -972,15 +972,35 @@
       const role = window.userRole;
       const loginDiv = document.getElementById('login');
       
-      console.log('Immediate initialization - Role:', role);
+      console.log('Immediate initialization - Role:', role, 'Login div exists:', !!loginDiv);
       
-      if (role && role !== 'guest' && loginDiv) {
+      // If no role is defined or it's undefined, this means we weren't properly authenticated
+      if (!role || role === 'undefined' || role === '' || role === 'null') {
+        console.log('No valid role found, checking if we should redirect');
+        
+        // If we're on the main page but have no role, redirect to role selection
+        if (window.location.pathname === '/' || window.location.pathname === '/index.html') {
+          console.log('On main page but no valid role, redirecting to role selection');
+          window.location.href = '/select-role?error=session_lost';
+          return;
+        }
+        
+        // Otherwise, show login interface
+        if (loginDiv) {
+          loginDiv.style.display = 'block';
+          loginDiv.style.visibility = 'visible';
+          console.log('Login div shown for unauthenticated user');
+        }
+        
+      } else if (role && role !== 'guest' && loginDiv) {
         // Hide login for authenticated users immediately
         loginDiv.style.display = 'none';
-        console.log('Login div hidden for authenticated user');
+        loginDiv.style.visibility = 'hidden';
+        console.log('Login div hidden for authenticated user with role:', role);
       } else if (!role && loginDiv) {
         // Show login for unauthenticated users
         loginDiv.style.display = 'block';
+        loginDiv.style.visibility = 'visible';
         console.log('Login div shown for unauthenticated user');
       }
     })();
