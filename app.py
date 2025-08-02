@@ -62,6 +62,36 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
+# Pre-resolve critical hostnames for better reliability
+SPOTIFY_IPS = []
+
+def resolve_spotify_ips():
+    """Pre-resolve Spotify IPs to avoid DNS issues during token exchange"""
+    global SPOTIFY_IPS
+    try:
+        import socket
+        # Try to resolve accounts.spotify.com to IPv4 addresses
+        hostnames = ['accounts.spotify.com', 'api.spotify.com']
+        resolved_ips = []
+        
+        for hostname in hostnames:
+            try:
+                addr_info = socket.getaddrinfo(hostname, 443, socket.AF_INET, socket.SOCK_STREAM)
+                for info in addr_info:
+                    ip = info[4][0]
+                    if ip not in resolved_ips:
+                        resolved_ips.append(ip)
+                        print(f"Resolved {hostname} to {ip}")
+            except Exception as e:
+                print(f"Failed to resolve {hostname}: {e}")
+        
+        SPOTIFY_IPS = resolved_ips
+        print(f"Pre-resolved Spotify IPs: {SPOTIFY_IPS}")
+        return len(SPOTIFY_IPS) > 0
+    except Exception as e:
+        print(f"Failed to pre-resolve Spotify IPs: {e}")
+        return False
+
 # Configure requests session with aggressive retry and timeout handling for Heroku
 def create_spotify_session():
     """Create a requests session optimized for Heroku -> Spotify connectivity"""
@@ -71,13 +101,13 @@ def create_spotify_session():
     
     session = requests.Session()
     
-    # More conservative retry strategy - focus on connection reliability
+    # Very aggressive retry strategy for Heroku network issues
     retry_strategy = Retry(
-        total=3,
-        connect=2,
-        read=2,
-        status=1,
-        backoff_factor=1.0,
+        total=5,
+        connect=3,
+        read=3,
+        status=2,
+        backoff_factor=0.5,
         status_forcelist=[429, 500, 502, 503, 504],
         allowed_methods=["HEAD", "GET", "PUT", "DELETE", "OPTIONS", "TRACE", "POST"],
         raise_on_status=False
@@ -85,16 +115,16 @@ def create_spotify_session():
     
     adapter = HTTPAdapter(
         max_retries=retry_strategy,
-        pool_connections=5,
-        pool_maxsize=5,
+        pool_connections=2,
+        pool_maxsize=2,
         pool_block=False  # Don't block on pool exhaustion
     )
     
     session.mount("http://", adapter)
     session.mount("https://", adapter)
     
-    # Shorter, more reasonable timeouts
-    session.timeout = (10, 20)  # 10s connect, 20s read
+    # Conservative timeouts
+    session.timeout = (5, 15)  # 5s connect, 15s read
     
     # Minimal headers to avoid any filtering
     session.headers.update({
@@ -103,6 +133,78 @@ def create_spotify_session():
     })
     
     return session
+
+def exchange_token_with_fallback(auth_code, redirect_uri):
+    """Exchange authorization code for access token with IP fallback"""
+    import base64
+    
+    client_id = os.getenv("SPOTIFY_CLIENT_ID")
+    client_secret = os.getenv("SPOTIFY_CLIENT_SECRET")
+    
+    # Prepare token exchange data
+    token_data = {
+        'grant_type': 'authorization_code',
+        'code': auth_code,
+        'redirect_uri': redirect_uri
+    }
+    
+    # Prepare authorization header
+    auth_string = f"{client_id}:{client_secret}"
+    auth_bytes = auth_string.encode('utf-8')
+    auth_b64 = base64.b64encode(auth_bytes).decode('utf-8')
+    
+    headers = {
+        'Authorization': f'Basic {auth_b64}',
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'User-Agent': 'BeatSync-Mixer/1.0'
+    }
+    
+    # Try normal hostname first
+    session = create_spotify_session()
+    urls_to_try = ['https://accounts.spotify.com/api/token']
+    
+    # Add IP-based URLs as fallbacks if we have resolved IPs
+    for ip in SPOTIFY_IPS:
+        urls_to_try.append(f'https://{ip}/api/token')
+    
+    for url in urls_to_try:
+        try:
+            print(f"Attempting token exchange with URL: {url}")
+            
+            # For IP-based URLs, add Host header
+            request_headers = headers.copy()
+            if ip_address_pattern(url):
+                request_headers['Host'] = 'accounts.spotify.com'
+            
+            response = session.post(
+                url,
+                data=token_data,
+                headers=request_headers,
+                timeout=(5, 15),
+                verify=True  # Keep SSL verification
+            )
+            
+            print(f"Response status: {response.status_code}")
+            
+            if response.status_code == 200:
+                print("Token exchange successful!")
+                return response.json()
+            else:
+                print(f"Token exchange failed with status {response.status_code}: {response.text}")
+                continue
+                
+        except Exception as e:
+            print(f"Token exchange failed with {url}: {str(e)}")
+            continue
+    
+    # If all attempts failed
+    raise Exception("All token exchange attempts failed")
+
+def ip_address_pattern(url):
+    """Check if URL contains an IP address instead of hostname"""
+    import re
+    ip_pattern = r'https?://\d+\.\d+\.\d+\.\d+'
+    return re.match(ip_pattern, url) is not None
 
 # Force IPv4 DNS resolution globally to fix Heroku IPv6 routing issues
 def force_ipv4_dns():
@@ -126,8 +228,9 @@ def force_ipv4_dns():
     socket.getaddrinfo = ipv4_only_getaddrinfo
     print("Forced IPv4 DNS resolution for Heroku compatibility")
 
-# Apply IPv4 DNS fix immediately
+# Apply DNS fixes immediately
 force_ipv4_dns()
+resolve_spotify_ips()
 
 oauth.register(
     name="spotify",
@@ -372,37 +475,13 @@ def callback():
         
         print(f"Received authorization code, exchanging for token...")
         
-        # Create custom session with DNS fixes for token exchange
-        custom_session = create_spotify_session()
-        
-        # Manual token exchange
-        token_data = {
-            'grant_type': 'authorization_code',
-            'code': code,
-            'redirect_uri': os.getenv("SPOTIFY_REDIRECT_URI"),
-            'client_id': os.getenv("SPOTIFY_CLIENT_ID"),
-            'client_secret': os.getenv("SPOTIFY_CLIENT_SECRET"),
-        }
-        
-        print("Attempting token exchange with custom session...")
+        # Use the robust token exchange function with IP fallbacks
         try:
-            token_response = custom_session.post(
-                'https://accounts.spotify.com/api/token',
-                data=token_data,
-                headers={'Content-Type': 'application/x-www-form-urlencoded'},
-                timeout=(15, 30)  # Extended timeout for token exchange
-            )
+            token = exchange_token_with_fallback(code, os.getenv("SPOTIFY_REDIRECT_URI"))
+            print("Successfully obtained Spotify access token with fallback method")
         except Exception as e:
-            print(f"Token exchange failed with error: {e}")
-            print(f"Error type: {type(e).__name__}")
+            print(f"All token exchange attempts failed: {e}")
             return redirect("/select-role?error=oauth_failed")
-        
-        if token_response.status_code != 200:
-            print(f"Token exchange failed: {token_response.status_code} - {token_response.text}")
-            return redirect("/select-role?error=oauth_failed")
-        
-        token = token_response.json()
-        print("Successfully obtained Spotify access token via custom session")
         
         # Store token in session
         session["spotify_token"] = token
@@ -410,7 +489,8 @@ def callback():
         # Get user profile using our custom session
         print("Fetching user profile...")
         try:
-            user_response = custom_session.get(
+            profile_session = create_spotify_session()
+            user_response = profile_session.get(
                 "https://api.spotify.com/v1/me", 
                 headers={"Authorization": f"Bearer {token['access_token']}"},
                 timeout=(10, 20)
