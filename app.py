@@ -317,22 +317,27 @@ def playlists():
 # Fetch tracks for a given playlist
 @app.route("/playlists/<playlist_id>/tracks")
 def playlist_tracks(playlist_id):
-    sp = get_spotify_client()
-    if not sp:
-        return redirect(url_for("login"))
+    token_info = session.get("spotify_token")
+    if not token_info:
+        print("No Spotify token in session - redirecting to login")
+        return jsonify({"error": "Not authenticated", "redirect": "/login"}), 401
+    
+    access_token = token_info.get("access_token")
+    if not access_token:
+        print("No access token available - redirecting to login")
+        return jsonify({"error": "Not authenticated", "redirect": "/login"}), 401
     
     try:
         # Get pagination parameters
         limit = min(int(request.args.get('limit', 50)), 50)  # Max 50 per request
         offset = int(request.args.get('offset', 0))
         
-        # Fetch tracks with Spotipy
-        data = sp.playlist_tracks(
-            playlist_id, 
-            limit=limit, 
-            offset=offset,
-            fields='items(track(id,name,artists(name),album(name,images),uri,duration_ms)),total,offset,limit'
-        )
+        # Use manual IP-based fetch to avoid DNS timeouts
+        data = manual_playlist_tracks_fetch(access_token, playlist_id, limit, offset)
+        
+        if not data:
+            print("Manual playlist tracks fetch failed - likely network issue")
+            return jsonify({"error": "Failed to fetch tracks"}), 500
         
         # Return simplified track data for better performance
         simplified_tracks = {
@@ -1532,6 +1537,42 @@ def manual_playlists_fetch(access_token):
         try:
             # Get user playlists directly from IP, use Host header for TLS
             url = f"https://{ip}/v1/me/playlists?limit=50&offset=0"
+            headers = {
+                'Host': 'api.spotify.com',
+                'Authorization': f'Bearer {access_token}',
+                'Content-Type': 'application/json'
+            }
+            
+            req_session = requests.Session()
+            
+            response = req_session.get(
+                url,
+                headers=headers,
+                timeout=(3, 3),
+                verify=False  # Skip SSL verification since we're using IP
+            )
+            
+            if response.status_code == 200:
+                return response.json()
+                
+        except Exception as e:
+            continue
+    
+    return None
+
+
+# Manual playlist tracks fetch fallback for Heroku DNS issues
+def manual_playlist_tracks_fetch(access_token, playlist_id, limit=50, offset=0):
+    """Manual playlist tracks fetch using hardcoded Spotify IPs as DNS fallback"""
+    
+    # Spotify API IP addresses (multiple for redundancy)
+    ip_addresses = ["35.186.224.24", "104.154.127.126", "34.102.136.180"]
+    
+    # Try each IP directly - bypass DNS completely
+    for ip in ip_addresses:
+        try:
+            # Get playlist tracks directly from IP, use Host header for TLS
+            url = f"https://{ip}/v1/playlists/{playlist_id}/tracks?limit={limit}&offset={offset}&fields=items(track(id,name,artists(name),album(name,images),uri,duration_ms)),total,offset,limit"
             headers = {
                 'Host': 'api.spotify.com',
                 'Authorization': f'Bearer {access_token}',
