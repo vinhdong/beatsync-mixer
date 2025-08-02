@@ -1944,6 +1944,11 @@
       reorderQueueByVotes();
     });
 
+    socket.on("vote_confirmed", data => {
+      console.log(`Vote confirmed: ${data.vote_type} on ${data.track_uri}`);
+      // The vote was successfully recorded on the server
+    });
+
     socket.on("chat_message", data => {
       const chatMessages = document.getElementById("chat-messages");
       const messageDiv = document.createElement("div");
@@ -1958,12 +1963,24 @@
     });
 
     function voteTrack(trackUri, voteType, buttonElement) {
-      // Add visual feedback to the clicked button
+      // Ensure user is authenticated
+      if (!window.userRole) {
+        alert('Please log in to vote on tracks');
+        return;
+      }
+      
+      // Add visual feedback to the clicked button immediately
       if (buttonElement) {
         buttonElement.classList.remove('just-voted');
         // Force reflow to restart animation
         buttonElement.offsetHeight;
         buttonElement.classList.add('just-voted');
+        
+        // Temporarily disable the button to prevent double-clicking
+        buttonElement.disabled = true;
+        setTimeout(() => {
+          buttonElement.disabled = false;
+        }, 300);
         
         // Remove the animation class after it completes
         setTimeout(() => {
@@ -1971,11 +1988,45 @@
         }, 300);
       }
       
-      // Don't send user_id - let the backend use session.get("user_id")
+      console.log(`Voting ${voteType} on track: ${trackUri}`);
+      
+      // Send vote to backend
       socket.emit('vote_add', {
         track_uri: trackUri,
         vote: voteType
       });
+      
+      // Provide immediate optimistic UI feedback
+      const safeId = trackUri.replace(/[^a-zA-Z0-9]/g, '_');
+      const countElement = document.getElementById(`${voteType}-${safeId}`);
+      if (countElement) {
+        const currentCount = parseInt(countElement.textContent) || 0;
+        countElement.textContent = currentCount + 1;
+        
+        // Update score immediately
+        const scoreElement = document.getElementById(`score-${safeId}`);
+        if (scoreElement) {
+          const upElement = document.getElementById(`up-${safeId}`);
+          const downElement = document.getElementById(`down-${safeId}`);
+          const upVotes = parseInt(upElement?.textContent) || 0;
+          const downVotes = parseInt(downElement?.textContent) || 0;
+          const netScore = upVotes - downVotes;
+          
+          scoreElement.textContent = `Score: ${netScore >= 0 ? '+' : ''}${netScore}`;
+          
+          // Color code the score
+          if (netScore > 0) {
+            scoreElement.style.color = '#1db954';
+            scoreElement.style.backgroundColor = 'rgba(29, 185, 84, 0.1)';
+          } else if (netScore < 0) {
+            scoreElement.style.color = '#e74c3c';
+            scoreElement.style.backgroundColor = 'rgba(231, 76, 60, 0.1)';
+          } else {
+            scoreElement.style.color = '#666';
+            scoreElement.style.backgroundColor = '#333';
+          }
+        }
+      }
     }
 
     function sendChatMessage(event) {

@@ -137,6 +137,12 @@ def register_handlers():
                 emit("error", {"message": "Invalid vote type"})
                 return
 
+            if not track_uri:
+                emit("error", {"message": "Invalid track URI"})
+                return
+
+            print(f"Processing vote: user_id={user_id}, track_uri={track_uri}, vote_type={vote_type}")
+
             with get_db() as db:
                 # Simply add the vote (allow multiple votes per user per track)
                 vote = Vote(track_uri=track_uri, vote_type=vote_type, user_id=user_id)
@@ -151,16 +157,26 @@ def register_handlers():
                     db.query(Vote).filter(Vote.track_uri == track_uri, Vote.vote_type == "down").count()
                 )
                 
-                print(f"Vote processed: {user_id} voted {vote_type} on {track_uri}. New counts: {up_votes} up, {down_votes} down")
+                print(f"Vote processed successfully: {user_id} voted {vote_type} on {track_uri}. New counts: {up_votes} up, {down_votes} down")
                 
-                # Broadcast updated vote counts
+                # Broadcast updated vote counts to all connected clients
                 socketio.emit(
                     "vote_updated", 
                     {"track_uri": track_uri, "up_votes": up_votes, "down_votes": down_votes}
                 )
                 
+                # Send confirmation back to the voter
+                emit("vote_confirmed", {
+                    "track_uri": track_uri, 
+                    "vote_type": vote_type,
+                    "up_votes": up_votes, 
+                    "down_votes": down_votes
+                })
+                
         except Exception as e:
             print(f"Error in vote_add: {e}")
+            import traceback
+            traceback.print_exc()
             emit("error", {"message": "Failed to process vote"})
 
 
@@ -201,9 +217,18 @@ def send_initial_data_async(client_sid):
     """Send initial data asynchronously to avoid blocking the connection"""
     try:
         with get_db() as db:
-            # Send queue items
+            # Send queue items with vote counts
             items = db.query(QueueItem).order_by(QueueItem.timestamp).limit(20).all()
             for item in items:
+                # Get vote counts for this track
+                up_votes = (
+                    db.query(Vote).filter(Vote.track_uri == item.track_uri, Vote.vote_type == "up").count()
+                )
+                down_votes = (
+                    db.query(Vote).filter(Vote.track_uri == item.track_uri, Vote.vote_type == "down").count()
+                )
+                
+                # Send queue item
                 socketio.emit(
                     "queue_updated",
                     {
@@ -213,6 +238,18 @@ def send_initial_data_async(client_sid):
                     },
                     room=client_sid
                 )
+                
+                # Send initial vote counts if there are any votes
+                if up_votes > 0 or down_votes > 0:
+                    socketio.emit(
+                        "vote_updated",
+                        {
+                            "track_uri": item.track_uri,
+                            "up_votes": up_votes,
+                            "down_votes": down_votes
+                        },
+                        room=client_sid
+                    )
                 
     except Exception as e:
         print(f"Error sending initial data: {e}")
