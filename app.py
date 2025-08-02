@@ -1,5 +1,6 @@
 import os
 from datetime import datetime, timezone, timedelta
+import socket  # Add socket import at the top level
 import requests
 import pylast
 import time
@@ -67,19 +68,8 @@ def create_spotify_session():
     import requests
     from requests.adapters import HTTPAdapter
     from urllib3.util.retry import Retry
-    import socket
     
     session = requests.Session()
-    
-    # Force IPv4 to avoid IPv6 routing issues on Heroku
-    def force_ipv4_resolver():
-        old_getaddrinfo = socket.getaddrinfo
-        def new_getaddrinfo(*args, **kwargs):
-            responses = old_getaddrinfo(*args, **kwargs)
-            return [response for response in responses if response[0] == socket.AF_INET]
-        socket.getaddrinfo = new_getaddrinfo
-    
-    force_ipv4_resolver()
     
     # More conservative retry strategy - focus on connection reliability
     retry_strategy = Retry(
@@ -113,6 +103,31 @@ def create_spotify_session():
     })
     
     return session
+
+# Force IPv4 DNS resolution globally to fix Heroku IPv6 routing issues
+def force_ipv4_dns():
+    """Force Python to use IPv4 DNS resolution to avoid Heroku IPv6 issues"""
+    original_getaddrinfo = socket.getaddrinfo
+    
+    def ipv4_only_getaddrinfo(*args, **kwargs):
+        """Custom getaddrinfo that filters out IPv6 addresses"""
+        try:
+            results = original_getaddrinfo(*args, **kwargs)
+            # Filter to only IPv4 results (AF_INET = 2)
+            ipv4_results = [result for result in results if result[0] == socket.AF_INET]
+            if ipv4_results:
+                return ipv4_results
+            # If no IPv4 results, fall back to original results
+            return results
+        except Exception:
+            # If anything goes wrong, fall back to original function
+            return original_getaddrinfo(*args, **kwargs)
+    
+    socket.getaddrinfo = ipv4_only_getaddrinfo
+    print("Forced IPv4 DNS resolution for Heroku compatibility")
+
+# Apply IPv4 DNS fix immediately
+force_ipv4_dns()
 
 oauth.register(
     name="spotify",
@@ -369,11 +384,18 @@ def callback():
             'client_secret': os.getenv("SPOTIFY_CLIENT_SECRET"),
         }
         
-        token_response = custom_session.post(
-            'https://accounts.spotify.com/api/token',
-            data=token_data,
-            headers={'Content-Type': 'application/x-www-form-urlencoded'}
-        )
+        print("Attempting token exchange with custom session...")
+        try:
+            token_response = custom_session.post(
+                'https://accounts.spotify.com/api/token',
+                data=token_data,
+                headers={'Content-Type': 'application/x-www-form-urlencoded'},
+                timeout=(15, 30)  # Extended timeout for token exchange
+            )
+        except Exception as e:
+            print(f"Token exchange failed with error: {e}")
+            print(f"Error type: {type(e).__name__}")
+            return redirect("/select-role?error=oauth_failed")
         
         if token_response.status_code != 200:
             print(f"Token exchange failed: {token_response.status_code} - {token_response.text}")
@@ -386,18 +408,27 @@ def callback():
         session["spotify_token"] = token
         
         # Get user profile using our custom session
-        user_response = custom_session.get(
-            "https://api.spotify.com/v1/me", 
-            headers={"Authorization": f"Bearer {token['access_token']}"}
-        )
-        
-        if user_response.status_code == 200:
-            user_data = user_response.json()
-            user_id = user_data.get("id")
-            display_name = user_data.get("display_name", user_id)
-            print(f"Successfully fetched user profile: {user_id}")
-        else:
-            print("Failed to fetch user profile, using defaults")
+        print("Fetching user profile...")
+        try:
+            user_response = custom_session.get(
+                "https://api.spotify.com/v1/me", 
+                headers={"Authorization": f"Bearer {token['access_token']}"},
+                timeout=(10, 20)
+            )
+            
+            if user_response.status_code == 200:
+                user_data = user_response.json()
+                user_id = user_data.get("id")
+                display_name = user_data.get("display_name", user_id)
+                print(f"Successfully fetched user profile: {user_id}")
+            else:
+                print("Failed to fetch user profile, using defaults")
+                user_id = f"user_{int(time.time())}"
+                display_name = "Spotify User"
+                
+        except Exception as e:
+            print(f"User profile fetch failed: {e}")
+            # Continue with default user info if profile fetch fails
             user_id = f"user_{int(time.time())}"
             display_name = "Spotify User"
         
