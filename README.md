@@ -112,6 +112,21 @@ REDIS_URL=redis://localhost:6379
 2. Create an API application
 3. Note your API key and shared secret
 
+### 🔌 BeatSync Internal API
+The application exposes its own REST API endpoints for integration:
+
+**Base URL**: `https://your-app-name.herokuapp.com` or `http://localhost:8000`
+
+**Key Endpoints**:
+- `GET /queue/` - Get current queue with vote counts
+- `POST /queue/auto-play` - Trigger auto-play (host only)
+- `GET /playlists/` - Get user's Spotify playlists (cached)
+- `POST /playback/play` - Control Spotify playback
+- `GET /recommend/` - Get Last.fm track recommendations
+- **Socket.IO Events**: Real-time queue updates, voting, chat
+
+**Authentication**: Session-based with Spotify OAuth integration
+
 ## 🏗️ Architecture
 
 ### Backend Structure
@@ -133,7 +148,7 @@ app.py              # Main Flask application and factory
 - **Frontend**: Vanilla JavaScript, Socket.IO client, Spotify Web Playback SDK
 - **Database**: SQLite (development) / PostgreSQL (production)
 - **Caching**: Redis with in-memory fallback
-- **APIs**: Spotify Web API, Last.fm API
+- **APIs**: Spotify Web API, Last.fm API, BeatSync Internal API
 - **Deployment**: Heroku with eventlet workers
 
 ## 🎮 How It Works
