@@ -2092,7 +2092,7 @@ def fetch_user_profile():
             
             # Update host file if user is host
             if session.get("role") == "host":
-                               host_file = 'current_host.txt'
+                host_file = 'current_host.txt'
                 if os.path.exists(host_file):
                     with open(host_file, 'w') as f:
                         f.write(f"{session['user_id']}|{session['display_name']}")
