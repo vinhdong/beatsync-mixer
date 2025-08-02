@@ -1613,7 +1613,7 @@ def auto_play_next():
             return next_track_response
         
         next_track = next_track_response.get_json()
-        track_uri = next_track["track_uri"];
+        track_uri = next_track["track_uri"]
         
         # Play the track
         token = session.get("spotify_token")
@@ -1704,3 +1704,8 @@ def bypass_login():
     
     print(f"BYPASS: Session set up for {requested_role}: {dict(session)}")
     return redirect("/")
+
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8000))
+    socketio.run(app, host="0.0.0.0", port=port, debug=False, allow_unsafe_werkzeug=True)
