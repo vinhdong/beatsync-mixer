@@ -1379,17 +1379,20 @@ def auto_play_next():
             return next_track_response
         
         next_track = next_track_response.get_json()
-        track_uri = next_track["track_uri"];
+        track_uri = next_track["track_uri"]
         
-        # Play the track using Spotipy
-        sp = get_spotify_client()
-        if not sp:
+        # Get access token
+        access_token = session.get("access_token")
+        if not access_token:
             return jsonify({"error": "Not authenticated"}), 401
         
         data = request.json or {}
         device_id = data.get("device_id")
         
-        sp.start_playback(device_id=device_id, uris=[track_uri])
+        # Play the track using manual IP-based request
+        success = manual_start_playback(access_token, device_id, [track_uri])
+        if not success:
+            return jsonify({"error": "Failed to start playback"}), 500
         
         return jsonify({
             "status": "success", 
