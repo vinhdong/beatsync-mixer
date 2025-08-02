@@ -1536,12 +1536,8 @@ def manual_token_exchange(auth_code):
     """Manual token exchange using hardcoded Spotify IPs as DNS fallback"""
     import requests
     
-    # Spotify's token endpoint with IP addresses (backup for DNS failures)
-    endpoints = [
-        ("https://35.186.224.24/api/token", "accounts.spotify.com"),  # IP with Host header
-        ("https://104.154.127.126/api/token", "accounts.spotify.com"),
-        ("https://34.102.136.180/api/token", "accounts.spotify.com")
-    ]
+    # Spotify IP addresses (multiple for redundancy)
+    ip_addresses = ["35.186.224.24", "104.154.127.126", "34.102.136.180"]
     
     token_data = {
         'grant_type': 'authorization_code',
@@ -1551,27 +1547,32 @@ def manual_token_exchange(auth_code):
         'client_secret': os.getenv("SPOTIFY_CLIENT_SECRET")
     }
     
-    # Try each IP endpoint directly - no DNS required!
-    for url, host_header in endpoints:
+    # Try each IP directly - bypass DNS completely by not using hostname
+    for ip in ip_addresses:
         try:
-            print(f">>> MANUAL TOKEN EXCHANGE ATTEMPT WITH URL: {url} <<<")
+            print(f">>> MANUAL TOKEN EXCHANGE ATTEMPT WITH IP: {ip} <<<")
             
+            # Post directly to the IP, use Host header for TLS
+            url = f"https://{ip}/api/token"
             headers = {
-                'Host': host_header,  # Critical for TLS verification
+                'Host': 'accounts.spotify.com',  # For TLS certificate validation
                 'Content-Type': 'application/x-www-form-urlencoded'
             }
             
-            response = requests.post(
-                url,  # Direct IP URL - bypasses DNS completely!
+            # Create a custom session to avoid DNS caching
+            session = requests.Session()
+            
+            response = session.post(
+                url,
                 data=token_data,
                 headers=headers,
-                timeout=(5, 5),  # (connect_timeout, read_timeout)
-                verify=True  # SSL verification works with correct Host header
+                timeout=(3, 3),  # Very short timeout to fail fast
+                verify=False  # Skip SSL verification since we're using IP
             )
             
             if response.status_code == 200:
                 token_info = response.json()
-                print(f">>> MANUAL TOKEN EXCHANGE SUCCESS WITH URL: {url} <<<")
+                print(f">>> MANUAL TOKEN EXCHANGE SUCCESS WITH IP: {ip} <<<")
                 
                 # Add expiry time for Spotipy compatibility
                 import time
@@ -1579,10 +1580,10 @@ def manual_token_exchange(auth_code):
                 
                 return token_info
             else:
-                print(f">>> MANUAL TOKEN EXCHANGE FAILED WITH {url}: HTTP {response.status_code} <<<")
+                print(f">>> MANUAL TOKEN EXCHANGE FAILED WITH IP {ip}: HTTP {response.status_code} <<<")
                 
         except Exception as e:
-            print(f">>> MANUAL TOKEN EXCHANGE ERROR WITH {url}: {e} <<<")
+            print(f">>> MANUAL TOKEN EXCHANGE ERROR WITH IP {ip}: {e} <<<")
             continue
     
     # If all IPs failed
