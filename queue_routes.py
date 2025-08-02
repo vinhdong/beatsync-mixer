@@ -182,7 +182,23 @@ def auto_play_next():
             print("start_playback failed")
             return jsonify({"error": "Failed to start playback"}), 500
         
-        # SUCCESS! Track is now playing - remove ONLY this specific track from the queue
+        # SUCCESS! Track is now playing - update currently playing cache
+        from cache import set_currently_playing
+        set_currently_playing(track_uri, next_track['track_name'], is_playing=True, device_id=device_id)
+        print(f"Updated currently playing cache: {next_track['track_name']}")
+        
+        # Broadcast the currently playing track to all clients
+        from flask import current_app
+        if hasattr(current_app, 'socketio'):
+            current_app.socketio.emit('playback_started', {
+                'track_uri': track_uri,
+                'track_name': next_track['track_name'],
+                'device_id': device_id,
+                'is_playing': True
+            })
+            print(f"Broadcasted playback started: {next_track['track_name']}")
+        
+        # Remove ONLY this specific track from the queue
         print(f"Successfully started playback of {next_track['track_name']}, removing from queue...")
         
         # Remove the track from the queue and its votes with additional safety checks

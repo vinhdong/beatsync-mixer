@@ -1685,8 +1685,8 @@
         } else {
           console.log('Successfully started playback');
           
-          // Remove the track from queue after successful playback
-          await removeTrackFromQueue(trackUri);
+          // DON'T remove the track immediately - let it stay in queue while playing
+          // The track will be removed when it finishes playing or when skipped
         }
       } catch (error) {
         console.error('Error playing track:', error);

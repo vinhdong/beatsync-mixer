@@ -63,9 +63,9 @@ def register_handlers():
         try:
             import threading
             from flask import current_app
-            # Pass the app context to the background thread
+            # Pass the app context and user role to the background thread
             app = current_app._get_current_object()
-            threading.Thread(target=send_initial_data_async, args=(request.sid, app), daemon=True).start()
+            threading.Thread(target=send_initial_data_async, args=(request.sid, app, user_role), daemon=True).start()
             
         except Exception as e:
             print(f"Error starting initial data thread: {e}")
@@ -257,7 +257,7 @@ def register_handlers():
             emit("error", {"message": "Failed to send message"})
 
 
-def send_initial_data_async(client_sid, app):
+def send_initial_data_async(client_sid, app, user_role):
     """Send initial data asynchronously to avoid blocking the connection"""
     with app.app_context():
         try:
@@ -294,7 +294,13 @@ def send_initial_data_async(client_sid, app):
                 print(f"No queue snapshot in cache, building from database for {client_sid}")
                 queue_data = update_queue_snapshot(app)
             
-            print(f"Sending {len(queue_data)} queue items to {client_sid}")
+            # For listeners, filter out the currently playing track from the queue
+            if user_role == "listener" and currently_playing:
+                currently_playing_uri = currently_playing['track_uri']
+                queue_data = [item for item in queue_data if item['track_uri'] != currently_playing_uri]
+                print(f"Filtered out currently playing track for listener. Queue has {len(queue_data)} remaining items")
+            
+            print(f"Sending {len(queue_data)} queue items to {client_sid} (role: {user_role})")
             
             # Send queue items and vote counts
             for item in queue_data:
