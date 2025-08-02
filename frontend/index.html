@@ -1091,6 +1091,40 @@
       }
     });
 
+    // Playlists became available from host
+    socket.on("playlists_available", data => {
+      console.log('Playlists available from host:', data);
+      
+      // Show notification for listeners
+      if (window.userRole === 'listener') {
+        const notification = document.createElement('div');
+        notification.style.cssText = `
+          position: fixed;
+          top: 20px;
+          right: 20px;
+          background: #1db954;
+          color: white;
+          padding: 12px 20px;
+          border-radius: 8px;
+          z-index: 1000;
+          font-weight: bold;
+        `;
+        notification.textContent = `🎵 ${data.host_name} shared ${data.playlist_count} playlists!`;
+        document.body.appendChild(notification);
+        
+        // Auto-reload playlists for listeners
+        setTimeout(() => {
+          loadPlaylists();
+        }, 1000);
+        
+        setTimeout(() => {
+          if (notification.parentNode) {
+            notification.parentNode.removeChild(notification);
+          }
+        }, 5000);
+      }
+    });
+
     // Spotify Web Playback SDK variables
     let player = null;
     let deviceId = null;
@@ -2181,7 +2215,7 @@
       fetch('/session-info', {
         credentials: 'include'
       })
-        .then(response => response.json())
+               .then(response => response.json())
         .then(sessionData => {
           console.log('Current session data:', sessionData);
         })

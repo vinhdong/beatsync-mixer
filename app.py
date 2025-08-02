@@ -251,6 +251,27 @@ def callback():
             with open(host_file, 'w') as f:
                 f.write(f"{user_id}|{display_name}")
             
+            # Pre-cache host's playlists for listeners
+            try:
+                print(f"Pre-caching playlists for new host: {display_name}")
+                playlists_data = manual_playlists_fetch(access_token)
+                if playlists_data:
+                    cache.set("host_playlists", playlists_data, timeout=1800)  # 30 minutes
+                    cache.set("host_access_token", access_token, timeout=1800)  # 30 minutes
+                    print(f"Successfully cached {len(playlists_data.get('items', []))} playlists for listeners")
+                    
+                    # Notify all connected listeners that playlists are now available
+                    socketio.emit('playlists_available', {
+                        'host_name': display_name,
+                        'playlist_count': len(playlists_data.get('items', []))
+                    })
+                    print("Notified listeners that playlists are available")
+                else:
+                    print("Failed to pre-cache playlists - API call failed")
+            except Exception as cache_error:
+                print(f"Error pre-caching playlists: {cache_error}")
+                # Don't fail the login process if caching fails
+            
         else:
             # Set as listener
             session["role"] = "listener"
