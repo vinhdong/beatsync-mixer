@@ -36,14 +36,16 @@ def login():
             
             # Also clear the queue for a fresh start
             try:
-                from db import get_db, QueueItem, Vote, CurrentlyPlaying
+                from db import get_db, QueueItem, Vote
+                from cache import clear_currently_playing, clear_queue_snapshot
                 with get_db() as db:
                     # Clear all votes and queue items
                     db.query(Vote).delete()
                     db.query(QueueItem).delete()
                     
-                    # Clear currently playing track
-                    db.query(CurrentlyPlaying).delete()
+                    # Clear caches
+                    clear_currently_playing()
+                    clear_queue_snapshot()
                     
                     # Emit queue cleared event to all connected clients
                     from flask import current_app
@@ -52,7 +54,7 @@ def login():
                         current_app.socketio.emit('votes_cleared')
                         current_app.socketio.emit('playback_paused', {'is_playing': False})
                         
-                print("Cleared queue, votes, and currently playing for new host session")
+                print("Cleared queue, votes, and caches for new host session")
             except Exception as e:
                 print(f"Error clearing queue during host login: {e}")
         

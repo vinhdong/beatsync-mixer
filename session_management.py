@@ -5,8 +5,8 @@ Handles role selection, host status, and session control.
 
 import os
 from flask import Blueprint, session, request, redirect, jsonify
-from db import get_db, QueueItem, Vote, ChatMessage, CurrentlyPlaying
-from cache import invalidate_playlist_cache
+from db import get_db, QueueItem, Vote, ChatMessage
+from cache import invalidate_playlist_cache, clear_currently_playing, clear_queue_snapshot
 from datetime import datetime, timezone
 
 
@@ -331,12 +331,7 @@ def sign_out_host():
         os.remove(host_file)
     
     # Clear currently playing track
-    try:
-        with get_db() as db:
-            db.query(CurrentlyPlaying).delete()
-            print("Cleared currently playing track on host sign out")
-    except Exception as e:
-        print(f"Error clearing currently playing track: {e}")
+    clear_currently_playing()
     
     # Clear playlist caches
     invalidate_playlist_cache()
@@ -383,8 +378,9 @@ def restart_session():
                 # Clear all chat messages
                 db.query(ChatMessage).delete()
                 
-                # Clear currently playing track
-                db.query(CurrentlyPlaying).delete()
+                # Clear caches
+                clear_currently_playing()
+                clear_queue_snapshot()
                 
                 # Emit events to all connected clients
                 from flask import current_app

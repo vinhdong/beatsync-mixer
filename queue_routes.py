@@ -8,6 +8,7 @@ import threading
 from flask import Blueprint, session, request, jsonify
 from db import get_db, QueueItem, Vote
 from spotify_api import start_playback
+from cache import clear_queue_snapshot
 
 
 queue_bp = Blueprint('queue', __name__)
@@ -50,6 +51,9 @@ def clear_queue():
             
             # Also clear votes for queue items
             db.query(Vote).delete()
+            
+            # Clear queue snapshot cache
+            clear_queue_snapshot()
             
             # Broadcast queue clear to all clients
             from flask import current_app

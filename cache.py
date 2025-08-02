@@ -203,3 +203,131 @@ def set_cached_tracks(playlist_id, tracks_data, limit=50, offset=0):
             print(f"Failed to cache tracks in Redis: {e}")
     
     threading.Thread(target=cache_tracks_async, daemon=True).start()
+
+
+def get_currently_playing():
+    """Get currently playing track from cache"""
+    from flask import current_app
+    
+    try:
+        cache = getattr(current_app, 'cache', None)
+        if cache:
+            cached_data = cache.get("currently_playing")
+            if cached_data:
+                if isinstance(cached_data, str):
+                    cached_data = json.loads(cached_data)
+                return cached_data
+    except Exception as e:
+        print(f"Failed to get currently playing from cache: {e}")
+    
+    return None
+
+
+def set_currently_playing(track_uri, track_name, is_playing=True, device_id=None):
+    """Set currently playing track in cache"""
+    from flask import current_app
+    
+    data = {
+        'track_uri': track_uri,
+        'track_name': track_name,
+        'is_playing': is_playing,
+        'device_id': device_id,
+        'timestamp': time.time()
+    }
+    
+    try:
+        cache = getattr(current_app, 'cache', None)
+        if cache:
+            cache.set("currently_playing", json.dumps(data), timeout=3600)  # 1 hour
+            print(f"Cached currently playing: {track_name} (playing: {is_playing})")
+            return True
+    except Exception as e:
+        print(f"Failed to cache currently playing: {e}")
+    
+    return False
+
+
+def clear_currently_playing():
+    """Clear currently playing track from cache"""
+    from flask import current_app
+    
+    try:
+        cache = getattr(current_app, 'cache', None)
+        if cache:
+            cache.delete("currently_playing")
+            print("Cleared currently playing from cache")
+            return True
+    except Exception as e:
+        print(f"Failed to clear currently playing from cache: {e}")
+    
+    return False
+
+
+def get_queue_snapshot():
+    """Get a snapshot of the current queue from cache"""
+    from flask import current_app
+    
+    try:
+        cache = getattr(current_app, 'cache', None)
+        if cache:
+            cached_data = cache.get("queue_snapshot")
+            if cached_data:
+                if isinstance(cached_data, str):
+                    cached_data = json.loads(cached_data)
+                return cached_data
+    except Exception as e:
+        print(f"Failed to get queue snapshot from cache: {e}")
+    
+    return []
+
+
+def update_queue_snapshot():
+    """Update the queue snapshot in cache from database"""
+    from flask import current_app
+    from db import get_db, QueueItem, Vote
+    
+    try:
+        with get_db() as db:
+            # Get all queue items with their vote counts
+            items = db.query(QueueItem).order_by(QueueItem.timestamp).all()
+            queue_data = []
+            
+            for item in items:
+                # Get vote counts for this track
+                up_votes = db.query(Vote).filter(Vote.track_uri == item.track_uri, Vote.vote_type == "up").count()
+                down_votes = db.query(Vote).filter(Vote.track_uri == item.track_uri, Vote.vote_type == "down").count()
+                
+                queue_data.append({
+                    'track_uri': item.track_uri,
+                    'track_name': item.track_name,
+                    'timestamp': item.timestamp.isoformat() if item.timestamp else None,
+                    'up_votes': up_votes,
+                    'down_votes': down_votes
+                })
+            
+            # Cache the queue snapshot
+            cache = getattr(current_app, 'cache', None)
+            if cache:
+                cache.set("queue_snapshot", json.dumps(queue_data), timeout=3600)  # 1 hour
+                print(f"Updated queue snapshot with {len(queue_data)} items")
+                return queue_data
+    except Exception as e:
+        print(f"Failed to update queue snapshot: {e}")
+    
+    return []
+
+
+def clear_queue_snapshot():
+    """Clear queue snapshot from cache"""
+    from flask import current_app
+    
+    try:
+        cache = getattr(current_app, 'cache', None)
+        if cache:
+            cache.delete("queue_snapshot")
+            print("Cleared queue snapshot from cache")
+            return True
+    except Exception as e:
+        print(f"Failed to clear queue snapshot from cache: {e}")
+    
+    return False
