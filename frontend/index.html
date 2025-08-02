@@ -1971,10 +1971,10 @@
         }, 300);
       }
       
+      // Don't send user_id - let the backend use session.get("user_id")
       socket.emit('vote_add', {
         track_uri: trackUri,
-        vote: voteType,
-        user_id: currentUser
+        vote: voteType
       });
     }
 

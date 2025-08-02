@@ -138,7 +138,16 @@ def register_handlers():
                 return
 
             with get_db() as db:
-                # Add the vote
+                # First, remove any existing votes from this user for this track
+                existing_votes = db.query(Vote).filter(
+                    Vote.track_uri == track_uri,
+                    Vote.user_id == user_id
+                ).all()
+                
+                for vote in existing_votes:
+                    db.delete(vote)
+                
+                # Add the new vote
                 vote = Vote(track_uri=track_uri, vote_type=vote_type, user_id=user_id)
                 db.add(vote)
                 
@@ -149,6 +158,8 @@ def register_handlers():
                 down_votes = (
                     db.query(Vote).filter(Vote.track_uri == track_uri, Vote.vote_type == "down").count()
                 )
+                
+                print(f"Vote processed: {user_id} voted {vote_type} on {track_uri}. New counts: {up_votes} up, {down_votes} down")
                 
                 # Broadcast updated vote counts
                 socketio.emit(
