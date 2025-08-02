@@ -63,8 +63,8 @@ oauth.register(
     authorize_url="https://accounts.spotify.com/authorize",
     client_kwargs={
         "scope": "user-read-playback-state user-modify-playback-state streaming playlist-read-private user-read-private user-read-email",
-        "timeout": 25,  # Increased timeout for better network reliability
-        "retries": 1,   # Single retry to avoid long waits
+        "timeout": 45,  # Much longer timeout for Heroku's network issues
+        "retries": 0,   # Disable automatic retries to handle ourselves
     },
     # Additional OAuth settings for better state handling
     server_metadata_url=None,  # Don't auto-discover, use explicit URLs
@@ -201,6 +201,49 @@ def oauth_debug():
     })
 
 
+@app.route("/session-debug")
+def session_debug():
+    """Debug endpoint to check session state during OAuth issues"""
+    session_data = {}
+    
+    # Get all session keys and their types (not full values for security)
+    for key in session.keys():
+        value = session[key]
+        if key.startswith('_state_spotify_'):
+            if isinstance(value, dict):
+                session_data[key] = {
+                    'type': 'dict',
+                    'keys': list(value.keys()) if isinstance(value, dict) else None,
+                    'has_exp': 'exp' in value if isinstance(value, dict) else False,
+                    'exp_value': value.get('exp') if isinstance(value, dict) else None
+                }
+            else:
+                session_data[key] = {
+                    'type': type(value).__name__,
+                    'length': len(str(value)) if value else 0
+                }
+        elif key in ['spotify_token', 'oauth2_token']:
+            session_data[key] = {
+                'type': type(value).__name__,
+                'present': bool(value),
+                'keys': list(value.keys()) if isinstance(value, dict) else None
+            }
+        else:
+            session_data[key] = {
+                'type': type(value).__name__,
+                'value': value if key in ['role', 'user_id', 'display_name', 'requested_role', 'callback_count'] else '[hidden]'
+            }
+    
+    import time
+    return jsonify({
+        "session_data": session_data,
+        "session_id": request.cookies.get('session', 'no-session-cookie'),
+        "current_time": time.time(),
+        "oauth_states_count": len([k for k in session.keys() if k.startswith('_state_spotify_')]),
+        "total_session_keys": len(session.keys())
+    })
+
+
 # Login route
 @app.route("/login")
 def login():
@@ -302,9 +345,26 @@ def callback():
             else:
                 print(f"State {callback_state} found in session (non-dict format)")
     
+    # Before starting retry loop, backup the current session state
+    original_session_backup = {}
+    if callback_state:
+        state_key = f'_state_spotify_{callback_state}'
+        # Create a backup of all OAuth-related session data
+        for key in list(session.keys()):
+            if key.startswith('_state_spotify_') or key in ['oauth2_token', 'spotify_token']:
+                original_session_backup[key] = session[key]
+        print(f"Backed up {len(original_session_backup)} session keys: {list(original_session_backup.keys())}")
+    
     for attempt in range(max_retries):
         try:
             print(f"OAuth callback attempt {attempt + 1}/{max_retries}")
+            
+            # Restore session state from backup before each attempt (except first)
+            if attempt > 0 and callback_state and original_session_backup:
+                print(f"Restoring session state from backup for attempt {attempt + 1}")
+                for key, value in original_session_backup.items():
+                    session[key] = value
+                    print(f"Restored session key: {key}")
             
             # Ensure the state is properly set in session for this attempt
             if callback_state:
@@ -353,19 +413,39 @@ def callback():
                 print("Successfully obtained Spotify access token")
             except Exception as token_error:
                 error_str = str(token_error).lower()
+                print(f"OAuth token error: {token_error}")
+                print(f"Session keys after error: {list(session.keys())}")
+                
                 # Check for specific network/DNS issues
-                if any(keyword in error_str for keyword in ['lookup timed out', 'newconnectionerror', 'dns']):
+                if any(keyword in error_str for keyword in ['lookup timed out', 'newconnectionerror', 'dns', 'timeout']):
                     print(f"Network/DNS error detected: {token_error}")
                     # For DNS/network issues, wait longer before retry
                     if attempt < max_retries - 1:
                         wait_time = 5 + (attempt * 3)  # Progressive wait: 5s, 8s
                         print(f"Waiting {wait_time}s before retry due to network issue...")
+                        print(f"Will restore session backup on next attempt")
                         time.sleep(wait_time)
                         continue
                     else:
                         print("Max retries reached for network issue")
+                        # Even on final failure, try to preserve session for next attempt
+                        if original_session_backup:
+                            print("Restoring session backup before final failure")
+                            for key, value in original_session_backup.items():
+                                session[key] = value
                         raise token_error
                 else:
+                    # For other errors (like CSRF/state mismatch), also try to restore session
+                    if 'state' in error_str or 'csrf' in error_str:
+                        print(f"State/CSRF error detected: {token_error}")
+                        if attempt < max_retries - 1 and original_session_backup:
+                            print("Restoring session backup due to state error")
+                            for key, value in original_session_backup.items():
+                                session[key] = value
+                            wait_time = 2 + attempt  # Shorter wait for state errors
+                            print(f"Waiting {wait_time}s before retry...")
+                            time.sleep(wait_time)
+                            continue
                     # For other errors, re-raise immediately
                     raise token_error
             session["spotify_token"] = token
@@ -479,6 +559,14 @@ def callback():
     
     # All retries failed
     print("All OAuth callback attempts failed")
+    
+    # Final attempt to restore session for next try
+    if original_session_backup:
+        print("Final session backup restoration before failure redirect")
+        for key, value in original_session_backup.items():
+            session[key] = value
+        print(f"Restored {len(original_session_backup)} session keys for future attempts")
+    
     session.pop('callback_count', None)
     return redirect("/select-role?error=oauth_failed")
 
