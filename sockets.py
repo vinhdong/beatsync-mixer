@@ -62,7 +62,10 @@ def register_handlers():
         # Send initial data in smaller chunks to avoid timeouts
         try:
             import threading
-            threading.Thread(target=send_initial_data_async, args=(session.sid,), daemon=True).start()
+            from flask import current_app
+            # Pass the app context to the background thread
+            app = current_app._get_current_object()
+            threading.Thread(target=send_initial_data_async, args=(request.sid, app), daemon=True).start()
             
         except Exception as e:
             print(f"Error starting initial data thread: {e}")
@@ -254,71 +257,72 @@ def register_handlers():
             emit("error", {"message": "Failed to send message"})
 
 
-def send_initial_data_async(client_sid):
+def send_initial_data_async(client_sid, app):
     """Send initial data asynchronously to avoid blocking the connection"""
-    try:
-        # Send currently playing track first if exists
-        currently_playing = get_currently_playing()
-        if currently_playing:
-            print(f"Sending currently playing track to {client_sid}: {currently_playing['track_name']}")
-            if currently_playing.get('is_playing', False):
-                socketio.emit(
-                    "playback_started",
-                    {
-                        "track_uri": currently_playing['track_uri'],
-                        "track_name": currently_playing['track_name'],
-                        "device_id": currently_playing.get('device_id'),
-                        "is_playing": True
-                    },
-                    room=client_sid
-                )
-            else:
-                socketio.emit(
-                    "playback_paused",
-                    {
-                        "track_uri": currently_playing['track_uri'],
-                        "track_name": currently_playing['track_name'],
-                        "device_id": currently_playing.get('device_id'),
-                        "is_playing": False
-                    },
-                    room=client_sid
-                )
-        
-        # Try to get queue from cache first, if not available, build it from database
-        queue_data = get_queue_snapshot()
-        if not queue_data:
-            print(f"No queue snapshot in cache, building from database for {client_sid}")
-            queue_data = update_queue_snapshot()
-        
-        print(f"Sending {len(queue_data)} queue items to {client_sid}")
-        
-        # Send queue items and vote counts
-        for item in queue_data:
-            # Send queue item
-            socketio.emit(
-                "queue_updated",
-                {
-                    "track_uri": item['track_uri'],
-                    "track_name": item['track_name'],
-                    "timestamp": item['timestamp'],
-                },
-                room=client_sid
-            )
+    with app.app_context():
+        try:
+            # Send currently playing track first if exists
+            currently_playing = get_currently_playing(app)
+            if currently_playing:
+                print(f"Sending currently playing track to {client_sid}: {currently_playing['track_name']}")
+                if currently_playing.get('is_playing', False):
+                    socketio.emit(
+                        "playback_started",
+                        {
+                            "track_uri": currently_playing['track_uri'],
+                            "track_name": currently_playing['track_name'],
+                            "device_id": currently_playing.get('device_id'),
+                            "is_playing": True
+                        },
+                        room=client_sid
+                    )
+                else:
+                    socketio.emit(
+                        "playback_paused",
+                        {
+                            "track_uri": currently_playing['track_uri'],
+                            "track_name": currently_playing['track_name'],
+                            "device_id": currently_playing.get('device_id'),
+                            "is_playing": False
+                        },
+                        room=client_sid
+                    )
             
-            # Send vote counts if there are any votes
-            up_votes = item.get('up_votes', 0)
-            down_votes = item.get('down_votes', 0)
-            if up_votes > 0 or down_votes > 0:
+            # Try to get queue from cache first, if not available, build it from database
+            queue_data = get_queue_snapshot(app)
+            if not queue_data:
+                print(f"No queue snapshot in cache, building from database for {client_sid}")
+                queue_data = update_queue_snapshot(app)
+            
+            print(f"Sending {len(queue_data)} queue items to {client_sid}")
+            
+            # Send queue items and vote counts
+            for item in queue_data:
+                # Send queue item
                 socketio.emit(
-                    "vote_updated",
+                    "queue_updated",
                     {
                         "track_uri": item['track_uri'],
-                        "up_votes": up_votes,
-                        "down_votes": down_votes
+                        "track_name": item['track_name'],
+                        "timestamp": item['timestamp'],
                     },
                     room=client_sid
                 )
                 
-    except Exception as e:
-        print(f"Error sending initial data: {e}")
-        socketio.emit("error", {"message": "Error loading initial data"}, room=client_sid)
+                # Send vote counts if there are any votes
+                up_votes = item.get('up_votes', 0)
+                down_votes = item.get('down_votes', 0)
+                if up_votes > 0 or down_votes > 0:
+                    socketio.emit(
+                        "vote_updated",
+                        {
+                            "track_uri": item['track_uri'],
+                            "up_votes": up_votes,
+                            "down_votes": down_votes
+                        },
+                        room=client_sid
+                    )
+                    
+        except Exception as e:
+            print(f"Error sending initial data: {e}")
+            socketio.emit("error", {"message": "Error loading initial data"}, room=client_sid)

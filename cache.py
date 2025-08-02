@@ -205,12 +205,15 @@ def set_cached_tracks(playlist_id, tracks_data, limit=50, offset=0):
     threading.Thread(target=cache_tracks_async, daemon=True).start()
 
 
-def get_currently_playing():
+def get_currently_playing(app=None):
     """Get currently playing track from cache"""
-    from flask import current_app
-    
     try:
-        cache = getattr(current_app, 'cache', None)
+        if app:
+            cache = app.cache
+        else:
+            from flask import current_app
+            cache = getattr(current_app, 'cache', None)
+        
         if cache:
             cached_data = cache.get("currently_playing")
             if cached_data:
@@ -223,10 +226,8 @@ def get_currently_playing():
     return None
 
 
-def set_currently_playing(track_uri, track_name, is_playing=True, device_id=None):
+def set_currently_playing(track_uri, track_name, is_playing=True, device_id=None, app=None):
     """Set currently playing track in cache"""
-    from flask import current_app
-    
     data = {
         'track_uri': track_uri,
         'track_name': track_name,
@@ -236,7 +237,12 @@ def set_currently_playing(track_uri, track_name, is_playing=True, device_id=None
     }
     
     try:
-        cache = getattr(current_app, 'cache', None)
+        if app:
+            cache = app.cache
+        else:
+            from flask import current_app
+            cache = getattr(current_app, 'cache', None)
+        
         if cache:
             cache.set("currently_playing", json.dumps(data), timeout=3600)  # 1 hour
             print(f"Cached currently playing: {track_name} (playing: {is_playing})")
@@ -247,12 +253,15 @@ def set_currently_playing(track_uri, track_name, is_playing=True, device_id=None
     return False
 
 
-def clear_currently_playing():
+def clear_currently_playing(app=None):
     """Clear currently playing track from cache"""
-    from flask import current_app
-    
     try:
-        cache = getattr(current_app, 'cache', None)
+        if app:
+            cache = app.cache
+        else:
+            from flask import current_app
+            cache = getattr(current_app, 'cache', None)
+        
         if cache:
             cache.delete("currently_playing")
             print("Cleared currently playing from cache")
@@ -263,12 +272,15 @@ def clear_currently_playing():
     return False
 
 
-def get_queue_snapshot():
+def get_queue_snapshot(app=None):
     """Get a snapshot of the current queue from cache"""
-    from flask import current_app
-    
     try:
-        cache = getattr(current_app, 'cache', None)
+        if app:
+            cache = app.cache
+        else:
+            from flask import current_app
+            cache = getattr(current_app, 'cache', None)
+        
         if cache:
             cached_data = cache.get("queue_snapshot")
             if cached_data:
@@ -281,9 +293,8 @@ def get_queue_snapshot():
     return []
 
 
-def update_queue_snapshot():
+def update_queue_snapshot(app=None):
     """Update the queue snapshot in cache from database"""
-    from flask import current_app
     from db import get_db, QueueItem, Vote
     
     try:
@@ -306,7 +317,12 @@ def update_queue_snapshot():
                 })
             
             # Cache the queue snapshot
-            cache = getattr(current_app, 'cache', None)
+            if app:
+                cache = app.cache
+            else:
+                from flask import current_app
+                cache = getattr(current_app, 'cache', None)
+            
             if cache:
                 cache.set("queue_snapshot", json.dumps(queue_data), timeout=3600)  # 1 hour
                 print(f"Updated queue snapshot with {len(queue_data)} items")
@@ -317,12 +333,15 @@ def update_queue_snapshot():
     return []
 
 
-def clear_queue_snapshot():
+def clear_queue_snapshot(app=None):
     """Clear queue snapshot from cache"""
-    from flask import current_app
-    
     try:
-        cache = getattr(current_app, 'cache', None)
+        if app:
+            cache = app.cache
+        else:
+            from flask import current_app
+            cache = getattr(current_app, 'cache', None)
+        
         if cache:
             cache.delete("queue_snapshot")
             print("Cleared queue snapshot from cache")
