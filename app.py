@@ -219,10 +219,17 @@ def callback():
         # Store token in session
         session["spotify_token"] = token_info
         
-        # Skip user profile fetch during callback to avoid DNS timeouts
-        # Use fallback values and fetch profile later when needed
-        user_id = f"user_{int(time.time())}"
-        display_name = "Spotify User"
+        # Fetch real user profile using IP-based approach to avoid DNS timeouts
+        access_token = token_info.get("access_token")
+        user_profile = manual_user_profile_fetch(access_token) if access_token else None
+        
+        if user_profile:
+            user_id = user_profile.get("id", f"user_{int(time.time())}")
+            display_name = user_profile.get("display_name") or user_profile.get("id", "Spotify User")
+        else:
+            # Fallback if profile fetch fails
+            user_id = f"user_{int(time.time())}"
+            display_name = "Spotify User"
         
         # Get the requested role from session
         requested_role = session.get('requested_role', 'listener')
@@ -266,7 +273,6 @@ def callback():
 
 # Fetch playlists
 @app.route("/playlists")
-@cache.cached(timeout=300, key_prefix='playlists')  # Cache for 5 minutes
 def playlists():
     token_info = session.get("spotify_token")
     if not token_info:
