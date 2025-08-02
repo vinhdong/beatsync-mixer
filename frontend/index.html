@@ -2427,6 +2427,23 @@
     }
 
     window.onload = function() {
+      // Immediately hide login div if user is authenticated
+      if (window.userRole && (window.userRole === 'host' || window.userRole === 'listener')) {
+        const loginDiv = document.getElementById('login');
+        if (loginDiv) {
+          console.log('Immediately hiding login div for authenticated user:', window.userRole);
+          loginDiv.style.display = 'none';
+          loginDiv.style.visibility = 'hidden';
+          loginDiv.style.height = '0px';
+          loginDiv.style.overflow = 'hidden';
+        }
+        
+        const roleSelection = document.querySelector('.role-selection');
+        if (roleSelection) {
+          roleSelection.style.display = 'none';
+        }
+      }
+      
       // Load playlists for hosts and listeners (listeners see host's playlists)
       if (window.userRole === 'host' || window.userRole === 'listener') {
         loadPlaylists();
@@ -2593,10 +2610,21 @@
           playbackTitle.textContent = '🎵 Now Playing (View Only)';
         }
         
-        // Hide login section
+        // Hide login section for listeners
         const loginDiv = document.getElementById('login');
         if (loginDiv) {
+          console.log('Hiding login div for listener');
           loginDiv.style.display = 'none';
+          loginDiv.style.visibility = 'hidden';
+          loginDiv.style.height = '0px';
+          loginDiv.style.overflow = 'hidden';
+        }
+        
+        // Also hide any role selection elements
+        const roleSelection = document.querySelector('.role-selection');
+        if (roleSelection) {
+          console.log('Hiding role selection for listener');
+          roleSelection.style.display = 'none';
         }
         
         // Show role indicator
@@ -2605,9 +2633,21 @@
         // Show all controls for hosts
         console.log('Setting up host UI - restart button should be visible');
         
+        // Force hide login/role selection for authenticated hosts
         const loginDiv = document.getElementById('login');
         if (loginDiv) {
+          console.log('Hiding login div for host');
           loginDiv.style.display = 'none';
+          loginDiv.style.visibility = 'hidden';
+          loginDiv.style.height = '0px';
+          loginDiv.style.overflow = 'hidden';
+        }
+        
+        // Also hide any other login-related elements that might be causing gaps
+        const roleSelection = document.querySelector('.role-selection');
+        if (roleSelection) {
+          console.log('Hiding role selection for host');
+          roleSelection.style.display = 'none';
         }
         
         // Ensure restart button is visible for hosts
