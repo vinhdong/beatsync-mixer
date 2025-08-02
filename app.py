@@ -115,13 +115,13 @@ def create_spotify_session():
     
     session = requests.Session()
     
-    # Very aggressive retry strategy for Heroku network issues
+    # Fast-fail retry strategy for Heroku network issues
     retry_strategy = Retry(
-        total=5,
-        connect=3,
-        read=3,
-        status=2,
-        backoff_factor=0.5,
+        total=2,  # Reduced total retries
+        connect=1,  # Only 1 connect retry per attempt
+        read=1,  # Only 1 read retry per attempt
+        status=1,
+        backoff_factor=0.1,  # Very short backoff
         status_forcelist=[429, 500, 502, 503, 504],
         allowed_methods=["HEAD", "GET", "PUT", "DELETE", "OPTIONS", "TRACE", "POST"],
         raise_on_status=False
@@ -137,8 +137,8 @@ def create_spotify_session():
     session.mount("http://", adapter)
     session.mount("https://", adapter)
     
-    # Conservative timeouts
-    session.timeout = (5, 15)  # 5s connect, 15s read
+    # Conservative timeouts - very short for first attempt to fail fast
+    session.timeout = (3, 8)  # 3s connect, 8s read - fail fast to try IP fallbacks
     
     # Minimal headers to avoid any filtering
     session.headers.update({
@@ -201,7 +201,7 @@ def exchange_token_with_fallback(auth_code, redirect_uri):
                 url,
                 data=token_data,
                 headers=request_headers,
-                timeout=(10, 20),  # Longer timeout for token exchange
+                timeout=(3, 8),  # Much shorter timeout to fail fast and try IP fallbacks
                 verify=verify_ssl  # Use SSL verification based on connection type
             )
             
@@ -261,7 +261,7 @@ def simple_token_exchange_bypass_dns(auth_code, redirect_uri):
         url,
         data=token_data,
         headers=headers,
-        timeout=(15, 30),
+        timeout=(5, 10),  # Shorter timeout for direct IP
         verify=False  # Disable SSL verification for direct IP connection
     )
     
