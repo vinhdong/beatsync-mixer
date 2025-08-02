@@ -63,8 +63,8 @@ oauth.register(
     authorize_url="https://accounts.spotify.com/authorize",
     client_kwargs={
         "scope": "user-read-playback-state user-modify-playback-state streaming playlist-read-private user-read-private user-read-email",
-        "timeout": 15,  # Reduced timeout to fail faster
-        "retries": 2,   # Fewer retries to fail faster
+        "timeout": 25,  # Increased timeout for better network reliability
+        "retries": 1,   # Single retry to avoid long waits
     },
     # Additional OAuth settings for better state handling
     server_metadata_url=None,  # Don't auto-discover, use explicit URLs
@@ -252,8 +252,8 @@ def login():
 # Callback route
 @app.route("/callback")
 def callback():
-    max_retries = 3
-    retry_delay = 2  # seconds
+    max_retries = 2  # Reduced retries for faster failure detection
+    retry_delay = 3  # Slightly longer initial delay
     
     print(f"OAuth callback received")
     print(f"Session at callback start: {dict(session)}")
@@ -347,8 +347,27 @@ def callback():
                             'exp': time.time() + 600  # 10 minutes from now
                         }
             
-            # Try to get the access token with timeout handling
-            token = oauth.spotify.authorize_access_token()
+            # Try to get the access token with improved error handling
+            try:
+                token = oauth.spotify.authorize_access_token()
+                print("Successfully obtained Spotify access token")
+            except Exception as token_error:
+                error_str = str(token_error).lower()
+                # Check for specific network/DNS issues
+                if any(keyword in error_str for keyword in ['lookup timed out', 'newconnectionerror', 'dns']):
+                    print(f"Network/DNS error detected: {token_error}")
+                    # For DNS/network issues, wait longer before retry
+                    if attempt < max_retries - 1:
+                        wait_time = 5 + (attempt * 3)  # Progressive wait: 5s, 8s
+                        print(f"Waiting {wait_time}s before retry due to network issue...")
+                        time.sleep(wait_time)
+                        continue
+                    else:
+                        print("Max retries reached for network issue")
+                        raise token_error
+                else:
+                    # For other errors, re-raise immediately
+                    raise token_error
             session["spotify_token"] = token
             oauth.spotify.token = token
             
@@ -446,11 +465,11 @@ def callback():
                 return redirect("/select-role?error=csrf_error")
             
             # Only retry on connection/timeout errors
-            if any(error_keyword in error_str for error_keyword in ['timeout', 'connection', 'newconnectionerror', 'maxretryerror']):
+            if any(error_keyword in error_str for error_keyword in ['timeout', 'connection', 'newconnectionerror', 'maxretryerror', 'lookup timed out', 'dns']):
                 if attempt < max_retries - 1:
                     print(f"Retrying OAuth callback in {retry_delay} seconds...")
                     time.sleep(retry_delay)
-                    retry_delay *= 2  # Exponential backoff
+                    retry_delay *= 1.5  # Gentler exponential backoff
                     continue
             
             # Log the full traceback for debugging
@@ -1596,7 +1615,7 @@ def auto_play_next():
             return next_track_response
         
         next_track = next_track_response.get_json()
-        track_uri = next_track["track_uri"]
+        track_uri = next_track["track_uri"];
         
         # Play the track
         token = session.get("spotify_token")
@@ -1657,7 +1676,33 @@ def remove_from_queue(track_uri):
         db.close()
 
 
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8000))
-    debug = os.environ.get("FLASK_ENV", "development") == "development"
-    socketio.run(app, host="0.0.0.0", port=port, debug=debug)
+# Emergency bypass login for testing (only use during OAuth debugging)
+@app.route("/bypass-login")
+def bypass_login():
+    """Emergency bypass for OAuth issues during testing - NOT FOR PRODUCTION"""
+    # Only allow in development
+    if os.getenv('FLASK_ENV') == 'production':
+        return redirect("/select-role?error=bypass_disabled")
+    
+    requested_role = request.args.get('role', 'host')
+    print(f"BYPASS LOGIN: Setting role to {requested_role}")
+    
+    # Set up minimal session
+    session['role'] = requested_role
+    session['user_id'] = f"test_user_{int(time.time())}"
+    session['display_name'] = f"Test {requested_role.title()}"
+    session['spotify_token'] = {
+        'access_token': 'test_token',
+        'token_type': 'Bearer',
+        'expires_in': 3600
+    }
+    session.permanent = True
+    
+    if requested_role == 'host':
+        # Create host file for testing
+        host_file = 'current_host.txt'
+        with open(host_file, 'w') as f:
+            f.write(f"{session['user_id']}|{session['display_name']}")
+    
+    print(f"BYPASS: Session set up for {requested_role}: {dict(session)}")
+    return redirect("/")
