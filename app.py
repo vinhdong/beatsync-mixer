@@ -219,9 +219,17 @@ def callback():
         # Store token in session
         session["spotify_token"] = token_info
         
-        # Skip user profile fetch during callback to avoid H12 timeouts
-        user_id = f"user_{int(time.time())}"  # Default fallback
-        display_name = "Spotify User"  # Default fallback
+        # Fetch user profile with timeout protection
+        try:
+            sp = spotipy.Spotify(auth=token_info['access_token'])
+            user_profile = sp.current_user()
+            user_id = user_profile.get('id', f"user_{int(time.time())}")
+            display_name = user_profile.get('display_name') or user_profile.get('id', 'Spotify User')
+        except Exception as e:
+            print(f"Failed to fetch user profile: {e}")
+            # Use fallback values if profile fetch fails
+            user_id = f"user_{int(time.time())}"
+            display_name = "Spotify User"
         
         # Get the requested role from session
         requested_role = session.get('requested_role', 'listener')
@@ -269,7 +277,8 @@ def callback():
 def playlists():
     sp = get_spotify_client()
     if not sp:
-        return redirect(url_for("login"))
+        print("No Spotify client available - redirecting to login")
+        return jsonify({"error": "Not authenticated", "redirect": "/login"}), 401
     
     try:
         # Fetch playlists with pagination and limit to improve performance
@@ -292,6 +301,11 @@ def playlists():
         }
         
         return jsonify(simplified_playlists)
+    except spotipy.exceptions.SpotifyException as e:
+        print(f"Spotify API error fetching playlists: {e}")
+        if e.http_status == 401:
+            return jsonify({"error": "Authentication expired", "redirect": "/login"}), 401
+        return jsonify({"error": f"Spotify API error: {str(e)}"}), 500
     except Exception as e:
         print(f"Error fetching playlists: {e}")
         return jsonify({"error": "Failed to fetch playlists"}), 500
@@ -1494,3 +1508,45 @@ def get_spotify_client():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     socketio.run(app, host="0.0.0.0", port=port, debug=False)
+
+
+# Debug endpoint to check user info
+@app.route("/debug-user")
+def debug_user():
+    """Debug endpoint to check user session and authentication status"""
+    session_data = {
+        "role": session.get("role"),
+        "user_id": session.get("user_id"),
+        "display_name": session.get("display_name"),
+        "has_token": bool(session.get("spotify_token")),
+        "token_info": None
+    }
+    
+    # Check token details if available
+    token = session.get("spotify_token")
+    if token:
+        session_data["token_info"] = {
+            "has_access_token": bool(token.get("access_token")),
+            "has_refresh_token": bool(token.get("refresh_token")),
+            "expires_at": token.get("expires_at"),
+            "current_time": int(time.time()),
+            "is_expired": spotify_oauth.is_token_expired(token) if token else True
+        }
+    
+    # Try to get Spotify client
+    sp = get_spotify_client()
+    session_data["spotify_client_available"] = bool(sp)
+    
+    if sp:
+        try:
+            # Try to get user profile
+            user_profile = sp.current_user()
+            session_data["spotify_user"] = {
+                "id": user_profile.get("id"),
+                "display_name": user_profile.get("display_name"),
+                "email": user_profile.get("email")
+            }
+        except Exception as e:
+            session_data["spotify_user_error"] = str(e)
+    
+    return jsonify(session_data)
