@@ -219,21 +219,10 @@ def callback():
         # Store token in session
         session["spotify_token"] = token_info
         
-        # Fetch user profile with IP-based fallback for DNS issues
-        try:
-            user_profile = get_user_profile_fast(token_info['access_token'])
-            if user_profile:
-                user_id = user_profile.get('id', f"user_{int(time.time())}")
-                display_name = user_profile.get('display_name') or user_profile.get('id', 'Spotify User')
-            else:
-                # Use fallback values if profile fetch fails
-                user_id = f"user_{int(time.time())}"
-                display_name = "Spotify User"
-        except Exception as e:
-            print(f"Failed to fetch user profile: {e}")
-            # Use fallback values if profile fetch fails
-            user_id = f"user_{int(time.time())}"
-            display_name = "Spotify User"
+        # Skip user profile fetch during callback to avoid DNS timeouts
+        # Use fallback values and fetch profile later when needed
+        user_id = f"user_{int(time.time())}"
+        display_name = "Spotify User"
         
         # Get the requested role from session
         requested_role = session.get('requested_role', 'listener')
@@ -1390,11 +1379,11 @@ def remove_from_queue(track_uri):
 
 # Fast user profile fetch using IP bypass for DNS issues
 def get_user_profile_fast(access_token):
-    """Get user profile using hardcoded Spotify IPs as DNS fallback"""
+    """Get user profile using hardcoded Spotify API IPs as DNS fallback"""
     import requests
     
-    # Spotify API IP addresses (multiple for redundancy)
-    ip_addresses = ["35.186.224.24", "104.154.127.126", "34.102.136.180"]
+    # Spotify Web API IP addresses (different from token endpoint IPs)
+    api_ip_addresses = ["35.190.45.25", "35.186.224.24", "34.102.136.180", "35.244.181.201"]
     
     headers = {
         'Authorization': f'Bearer {access_token}',
@@ -1402,8 +1391,8 @@ def get_user_profile_fast(access_token):
         'Content-Type': 'application/json'
     }
     
-    # Try each IP directly - bypass DNS completely
-    for ip in ip_addresses:
+    # Try each API IP directly - bypass DNS completely
+    for ip in api_ip_addresses:
         try:
             # Get user profile directly from IP, use Host header for TLS
             url = f"https://{ip}/v1/me"
@@ -1422,8 +1411,10 @@ def get_user_profile_fast(access_token):
                 return response.json()
                 
         except Exception as e:
+            print(f"API IP {ip} failed: {e}")
             continue
     
+    print("All API IP addresses failed for user profile fetch")
     return None
 
 
@@ -1593,3 +1584,38 @@ def debug_user():
             session_data["spotify_user_error"] = str(e)
     
     return jsonify(session_data)
+
+
+@app.route("/fetch-user-profile", methods=["POST"])
+def fetch_user_profile():
+    """Fetch user profile asynchronously after login"""
+    if not session.get("spotify_token"):
+        return jsonify({"error": "Not authenticated"}), 401
+    
+    try:
+        # Try to get user profile using fast IP-based method
+        user_profile = get_user_profile_fast(session["spotify_token"]["access_token"])
+        
+        if user_profile:
+            # Update session with real user info
+            session["user_id"] = user_profile.get("id", session.get("user_id"))
+            session["display_name"] = user_profile.get("display_name") or user_profile.get("id", "Spotify User")
+            
+            # Update host file if user is host
+            if session.get("role") == "host":
+                host_file = 'current_host.txt'
+                if os.path.exists(host_file):
+                    with open(host_file, 'w') as f:
+                        f.write(f"{session['user_id']}|{session['display_name']}")
+            
+            return jsonify({
+                "success": True,
+                "user_id": session["user_id"],
+                "display_name": session["display_name"]
+            })
+        else:
+            return jsonify({"error": "Could not fetch user profile"}), 500
+            
+    except Exception as e:
+        print(f"Error fetching user profile: {e}")
+        return jsonify({"error": "Failed to fetch user profile"}), 500
