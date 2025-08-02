@@ -219,12 +219,16 @@ def callback():
         # Store token in session
         session["spotify_token"] = token_info
         
-        # Fetch user profile with timeout protection
+        # Fetch user profile with IP-based fallback for DNS issues
         try:
-            sp = spotipy.Spotify(auth=token_info['access_token'])
-            user_profile = sp.current_user()
-            user_id = user_profile.get('id', f"user_{int(time.time())}")
-            display_name = user_profile.get('display_name') or user_profile.get('id', 'Spotify User')
+            user_profile = get_user_profile_fast(token_info['access_token'])
+            if user_profile:
+                user_id = user_profile.get('id', f"user_{int(time.time())}")
+                display_name = user_profile.get('display_name') or user_profile.get('id', 'Spotify User')
+            else:
+                # Use fallback values if profile fetch fails
+                user_id = f"user_{int(time.time())}"
+                display_name = "Spotify User"
         except Exception as e:
             print(f"Failed to fetch user profile: {e}")
             # Use fallback values if profile fetch fails
@@ -1382,6 +1386,45 @@ def remove_from_queue(track_uri):
         return jsonify({"error": str(e)}), 500
     finally:
         db.close()
+
+
+# Fast user profile fetch using IP bypass for DNS issues
+def get_user_profile_fast(access_token):
+    """Get user profile using hardcoded Spotify IPs as DNS fallback"""
+    import requests
+    
+    # Spotify API IP addresses (multiple for redundancy)
+    ip_addresses = ["35.186.224.24", "104.154.127.126", "34.102.136.180"]
+    
+    headers = {
+        'Authorization': f'Bearer {access_token}',
+        'Host': 'api.spotify.com',  # For TLS certificate validation
+        'Content-Type': 'application/json'
+    }
+    
+    # Try each IP directly - bypass DNS completely
+    for ip in ip_addresses:
+        try:
+            # Get user profile directly from IP, use Host header for TLS
+            url = f"https://{ip}/v1/me"
+            
+            # Create a custom requests session to avoid DNS caching
+            req_session = requests.Session()
+            
+            response = req_session.get(
+                url,
+                headers=headers,
+                timeout=(2, 3),  # Very short timeout to fail fast
+                verify=False  # Skip SSL verification since we're using IP
+            )
+            
+            if response.status_code == 200:
+                return response.json()
+                
+        except Exception as e:
+            continue
+    
+    return None
 
 
 # Manual token exchange fallback for Heroku DNS issues
