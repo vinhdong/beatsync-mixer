@@ -328,33 +328,11 @@ def callback():
         # Store token in session
         session["spotify_token"] = token_info
         
-        # Get user profile with fast timeout to avoid H12 errors
-        print(">>> FETCHING USER PROFILE WITH QUICK TIMEOUT <<<")
+        # Skip user profile fetch during callback to avoid H12 timeouts
+        # We'll fetch it later when needed in get_spotify_client()
+        print(">>> SKIPPING USER PROFILE FETCH TO AVOID H12 - USING DEFAULTS <<<")
         user_id = f"user_{int(time.time())}"  # Default fallback
         display_name = "Spotify User"  # Default fallback
-        
-        try:
-            # Create Spotipy client with ultra-short timeout for profile fetch
-            import spotipy
-            from spotipy.oauth2 import SpotifyOAuth
-            
-            # Create a new Spotipy client with very short timeout just for profile
-            profile_oauth = SpotifyOAuth(
-                client_id=os.getenv("SPOTIFY_CLIENT_ID"),
-                client_secret=os.getenv("SPOTIFY_CLIENT_SECRET"),
-                redirect_uri=os.getenv("SPOTIFY_REDIRECT_URI"),
-                requests_timeout=1,  # Ultra-short 1 second timeout
-                open_browser=False
-            )
-            
-            sp = spotipy.Spotify(auth=token_info['access_token'], requests_timeout=1)
-            user_data = sp.me()
-            user_id = user_data.get("id", user_id)
-            display_name = user_data.get("display_name", user_id)
-            print(f">>> SPOTIPY USER PROFILE SUCCESS: {user_id} <<<")
-        except Exception as e:
-            print(f">>> SPOTIPY USER PROFILE FAILED (using defaults): {e} <<<")
-            # Use the default values we already set above
         
         # Get the requested role from session
         requested_role = session.get('requested_role', 'listener')
