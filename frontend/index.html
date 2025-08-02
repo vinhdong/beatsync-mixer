@@ -2544,6 +2544,20 @@
     }
 
     window.onload = function() {
+      console.log('Page loaded, user role:', window.userRole);
+      
+      // Ensure proper UI state on page load
+      const clearQueueBtn = document.getElementById('clear-queue-btn');
+      if (clearQueueBtn) {
+        if (window.userRole === 'host') {
+          clearQueueBtn.style.display = 'inline-block';
+          console.log('Page load: Clear queue button shown for host');
+        } else {
+          clearQueueBtn.style.display = 'none';
+          console.log('Page load: Clear queue button hidden for role:', window.userRole);
+        }
+      }
+      
       // Immediately hide login div if user is authenticated
       if (window.userRole && (window.userRole === 'host' || window.userRole === 'listener')) {
         const loginDiv = document.getElementById('login');
