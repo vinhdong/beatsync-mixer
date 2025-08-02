@@ -63,43 +63,53 @@ from urllib3.util.retry import Retry
 
 # Configure requests session with aggressive retry and timeout handling for Heroku
 def create_spotify_session():
+    """Create a requests session optimized for Heroku -> Spotify connectivity"""
     import requests
     from requests.adapters import HTTPAdapter
     from urllib3.util.retry import Retry
+    import socket
     
     session = requests.Session()
     
-    # Very aggressive retry strategy for Heroku network issues
+    # Force IPv4 to avoid IPv6 routing issues on Heroku
+    def force_ipv4_resolver():
+        old_getaddrinfo = socket.getaddrinfo
+        def new_getaddrinfo(*args, **kwargs):
+            responses = old_getaddrinfo(*args, **kwargs)
+            return [response for response in responses if response[0] == socket.AF_INET]
+        socket.getaddrinfo = new_getaddrinfo
+    
+    force_ipv4_resolver()
+    
+    # More conservative retry strategy - focus on connection reliability
     retry_strategy = Retry(
-        total=5,  # More retries
-        connect=3,  # Connection-specific retries
-        read=3,     # Read-specific retries
-        status=3,   # Status-specific retries
-        backoff_factor=0.5,  # Faster backoff
-        status_forcelist=[429, 500, 502, 503, 504, 520, 521, 522, 523, 524],
+        total=3,
+        connect=2,
+        read=2,
+        status=1,
+        backoff_factor=1.0,
+        status_forcelist=[429, 500, 502, 503, 504],
         allowed_methods=["HEAD", "GET", "PUT", "DELETE", "OPTIONS", "TRACE", "POST"],
-        raise_on_status=False  # Don't raise on HTTP errors
+        raise_on_status=False
     )
     
     adapter = HTTPAdapter(
         max_retries=retry_strategy,
-        pool_connections=20,  # More connection pooling
-        pool_maxsize=20,
-        pool_block=True
+        pool_connections=5,
+        pool_maxsize=5,
+        pool_block=False  # Don't block on pool exhaustion
     )
     
     session.mount("http://", adapter)
     session.mount("https://", adapter)
     
-    # Aggressive timeouts for Heroku
-    session.timeout = (15, 45)  # 15s connect, 45s read
+    # Shorter, more reasonable timeouts
+    session.timeout = (10, 20)  # 10s connect, 20s read
     
-    # Add DNS resolution help
+    # Minimal headers to avoid any filtering
     session.headers.update({
-        'Connection': 'keep-alive',
-        'User-Agent': 'BeatSync-Mixer/1.0 (Heroku)',
-        'Accept': 'application/json',
-        'Cache-Control': 'no-cache'
+        'User-Agent': 'BeatSync-Mixer/1.0',
+        'Accept': 'application/json'
     })
     
     return session
@@ -1606,4 +1616,6 @@ def remove_from_queue(track_uri):
         db.close()
 
 
-# Intelligent OAuth fallback for network issues
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8000))
+    socketio.run(app, host="0.0.0.0", port=port, debug=False, allow_unsafe_werkzeug=True)
