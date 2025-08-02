@@ -91,8 +91,6 @@ oauth.register(
         "scope": "user-read-playback-state user-modify-playback-state streaming playlist-read-private user-read-private user-read-email",
         "timeout": 60,  # Increased timeout for Heroku's network issues
     },
-    # Use custom session with better retry handling
-    session=create_spotify_session(),
     # Additional OAuth settings for better state handling
     server_metadata_url=None,  # Don't auto-discover, use explicit URLs
     authorize_params={'show_dialog': 'false'},  # Don't force re-authorization
