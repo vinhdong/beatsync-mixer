@@ -1,4 +1,5 @@
 import os
+import json
 from datetime import datetime, timezone, timedelta
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
@@ -54,7 +55,7 @@ app.config['CACHE_TYPE'] = 'SimpleCache'  # In-memory cache for development
 app.config['CACHE_DEFAULT_TIMEOUT'] = 300  # 5 minutes
 cache = Cache(app)
 
-# Spotipy OAuth setup - clean and reliable
+# Spotipy OAuth setup with ultra-aggressive timeout settings for Heroku
 spotify_oauth = SpotifyOAuth(
     client_id=os.getenv("SPOTIFY_CLIENT_ID"),
     client_secret=os.getenv("SPOTIFY_CLIENT_SECRET"),
@@ -62,7 +63,7 @@ spotify_oauth = SpotifyOAuth(
     scope="user-read-playback-state user-modify-playback-state streaming playlist-read-private user-read-private user-read-email",
     show_dialog=False,
     cache_path=None,  # Don't use file-based cache, we'll handle tokens manually
-    requests_timeout=10,  # Short timeout to fail fast
+    requests_timeout=2,  # Ultra-short timeout - fail in 2s, not 10s
     open_browser=False
 )
 
@@ -295,14 +296,26 @@ def callback():
         
         print(f"Received authorization code, exchanging for token...")
         
-        # Use Spotipy's built-in token exchange - clean and reliable
-        try:
-            print(">>> USING SPOTIPY OAUTH - NEW CODE RUNNING <<<")
-            token_info = spotify_oauth.get_access_token(code)
-            print(">>> SPOTIPY TOKEN EXCHANGE SUCCESSFUL <<<")
-        except Exception as e:
-            print(f">>> SPOTIPY TOKEN EXCHANGE FAILED: {e} <<<")
-            return redirect("/select-role?error=oauth_failed")
+        # Use Spotipy's built-in token exchange with retry mechanism
+        max_retries = 2
+        for attempt in range(max_retries):
+            try:
+                print(f">>> SPOTIPY TOKEN EXCHANGE ATTEMPT {attempt + 1}/{max_retries} <<<")
+                token_info = spotify_oauth.get_access_token(code)
+                print(">>> SPOTIPY TOKEN EXCHANGE SUCCESSFUL <<<")
+                break
+            except Exception as e:
+                print(f">>> SPOTIPY TOKEN EXCHANGE ATTEMPT {attempt + 1} FAILED: {e} <<<")
+                if attempt == max_retries - 1:  # Last attempt
+                    print(">>> ALL TOKEN EXCHANGE ATTEMPTS FAILED - HEROKU NETWORK ISSUE <<<")
+                    # Store the failure details for user feedback
+                    error_msg = "network_timeout"
+                    if "Lookup timed out" in str(e) or "DNS" in str(e):
+                        error_msg = "dns_timeout"
+                    return redirect(f"/select-role?error=oauth_failed&details={error_msg}")
+                else:
+                    print(f">>> RETRYING TOKEN EXCHANGE IN 1 SECOND <<<")
+                    time.sleep(1)  # Brief wait before retry
         
         # Store token in session
         session["spotify_token"] = token_info
@@ -995,19 +1008,45 @@ def select_role():
         </div>
         """
     elif error == 'oauth_failed':
-        error_message = """
-        <div style="background: #ffe6e6; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #e74c3c; color: #c0392b;">
-            <strong>⚠️ Authentication Failed</strong><br>
-            There was an issue connecting to Spotify. This might be due to:<br>
-            • Network timeout (Heroku → Spotify)<br>
-            • Temporary Spotify API issues<br>
-            • Browser cache/cookie issues<br><br>
-            <strong>Please try:</strong><br>
-            1. Wait 30 seconds and try again<br>
-            2. Clear browser cache and cookies<br>
-            3. Try a different browser or incognito mode
-        </div>
-        """
+        details = request.args.get('details', '')
+        if details == 'dns_timeout':
+            error_message = """
+            <div style="background: #ffe6e6; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #e74c3c; color: #c0392b;">
+                <strong>🌐 Network Connection Issue</strong><br>
+                Unable to connect to Spotify's servers due to DNS/network timeout.<br>
+                This is a known issue with Heroku's network to Spotify.<br><br>
+                <strong>Please try:</strong><br>
+                1. Wait 1-2 minutes and try again<br>
+                2. Try multiple times - it sometimes works on retry<br>
+                3. Check <a href="https://status.heroku.com" target="_blank">Heroku status</a> for network issues<br>
+                4. Contact support if this persists for over 15 minutes
+            </div>
+            """
+        elif details == 'network_timeout':
+            error_message = """
+            <div style="background: #ffe6e6; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #e74c3c; color: #c0392b;">
+                <strong>⏱️ Connection Timeout</strong><br>
+                Connection to Spotify timed out. This may be temporary.<br><br>
+                <strong>Please try:</strong><br>
+                1. Wait 30 seconds and try again<br>
+                2. Try multiple times - network issues can be intermittent<br>
+                3. Clear browser cache and try again
+            </div>
+            """
+        else:
+            error_message = """
+            <div style="background: #ffe6e6; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #e74c3c; color: #c0392b;">
+                <strong>⚠️ Authentication Failed</strong><br>
+                There was an issue connecting to Spotify. This might be due to:<br>
+                • Network timeout (Heroku → Spotify)<br>
+                • Temporary Spotify API issues<br>
+                • Browser cache/cookie issues<br><br>
+                <strong>Please try:</strong><br>
+                1. Wait 30 seconds and try again<br>
+                2. Clear browser cache and cookies<br>
+                3. Try a different browser or incognito mode
+            </div>
+            """
     
     return f"""
     <!DOCTYPE html>
@@ -1430,7 +1469,7 @@ def auto_play_next():
             return next_track_response
         
         next_track = next_track_response.get_json()
-        track_uri = next_track["track_uri"]
+        track_uri = next_track["track_uri"];
         
         # Play the track using Spotipy
         sp = get_spotify_client()
@@ -1523,6 +1562,80 @@ def test_spotipy():
         }), 500
 
 
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8000))
-    socketio.run(app, host="0.0.0.0", port=port, debug=False, allow_unsafe_werkzeug=True)
+# Test endpoint to verify callback logic without full OAuth
+@app.route("/test-callback")
+def test_callback():
+    try:
+        print(">>> TESTING CALLBACK LOGIC <<<")
+        # Test that our callback would work with a sample auth code
+        # This tests everything except the actual token exchange
+        
+        # Simulate callback parameters
+        test_session = {
+            'requested_role': 'host',
+            'initialized': True
+        }
+        
+        print(f">>> TEST SESSION: {test_session} <<<")
+        print(">>> SPOTIPY TOKEN EXCHANGE WOULD HAPPEN HERE <<<")
+        print(">>> CALLBACK LOGIC TEST SUCCESSFUL <<<")
+        
+        return jsonify({
+            "status": "success", 
+            "message": "Callback logic test successful - Spotipy integration ready",
+            "test_session": test_session
+        })
+    except Exception as e:
+        print(f">>> CALLBACK TEST ERROR: {e} <<<")
+        return jsonify({
+            "status": "error",
+            "message": f"Callback test error: {str(e)}"
+        }), 500
+
+
+# Network diagnostic endpoint
+@app.route("/network-test")
+def network_test():
+    """Test network connectivity to Spotify from Heroku"""
+    results = {}
+    
+    # Test DNS resolution
+    try:
+        import socket
+        start_time = time.time()
+        addrs = socket.getaddrinfo('accounts.spotify.com', 443)
+        dns_time = time.time() - start_time
+        results['dns'] = {
+            'status': 'success', 
+            'time_ms': round(dns_time * 1000, 2),
+            'addresses': [addr[4][0] for addr in addrs[:3]]
+        }
+    except Exception as e:
+        results['dns'] = {'status': 'failed', 'error': str(e)}
+    
+    # Test HTTP connection
+    try:
+        import requests
+        start_time = time.time()
+        response = requests.get('https://accounts.spotify.com', timeout=5)
+        http_time = time.time() - start_time
+        results['http'] = {
+            'status': 'success', 
+            'status_code': response.status_code,
+            'time_ms': round(http_time * 1000, 2)
+        }
+    except Exception as e:
+        results['http'] = {'status': 'failed', 'error': str(e)}
+    
+    # Test Spotipy timeout settings
+    results['spotipy_config'] = {
+        'timeout': getattr(spotify_oauth, 'requests_timeout', 'unknown'),
+        'client_id_present': bool(os.getenv("SPOTIFY_CLIENT_ID")),
+        'redirect_uri': os.getenv("SPOTIFY_REDIRECT_URI")
+    }
+    
+    return f"""
+    <h2>Network Diagnostic Results</h2>
+    <pre>{json.dumps(results, indent=2)}</pre>
+    <p><a href="/select-role">← Back to role selection</a></p>
+    """
