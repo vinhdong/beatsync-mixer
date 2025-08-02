@@ -1429,11 +1429,43 @@ def auto_play_next():
             print("manual_start_playback failed")
             return jsonify({"error": "Failed to start playback"}), 500
         
-        print(f"Successfully started playback of {next_track['track_name']}")
+        # SUCCESS! Track is now playing - remove it from the queue immediately
+        print(f"Successfully started playback of {next_track['track_name']}, removing from queue...")
+        
+        # Remove the track from the queue and its votes
+        db = SessionLocal()
+        try:
+            # Find and remove the track
+            item = db.query(QueueItem).filter_by(track_uri=track_uri).first()
+            if item:
+                db.delete(item)
+                print(f"Removed {item.track_name} from queue")
+                
+                # Also remove associated votes
+                votes_deleted = db.query(Vote).filter_by(track_uri=track_uri).delete()
+                print(f"Removed {votes_deleted} votes for {item.track_name}")
+                
+                db.commit()
+                
+                # Emit removal event to all clients
+                socketio.emit('track_removed', {
+                    'track_uri': track_uri,
+                    'track_name': item.track_name
+                })
+                print(f"Broadcasted track removal: {item.track_name}")
+            else:
+                print(f"Warning: Track {track_uri} not found in queue to remove")
+        except Exception as db_error:
+            print(f"Error removing track from queue: {db_error}")
+            db.rollback()
+        finally:
+            db.close()
+        
+        print(f"Auto-play complete: {next_track['track_name']} is playing and removed from queue")
         return jsonify({
             "status": "success", 
             "track": next_track,
-            "message": f"Now playing: {next_track['track_name']} (Score: +{next_track['net_score']})"
+            "message": f"Now playing: {next_track['track_name']} (Score: {next_track['net_score']})"
         })
         
     except Exception as e:
