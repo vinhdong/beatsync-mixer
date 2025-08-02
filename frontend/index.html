@@ -934,7 +934,7 @@
         <div id="queue-section">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
             <h2>Current Queue <small style="font-size: 0.6em; color: #666; font-weight: normal;">(ordered by votes)</small></h2>
-            <button id="clear-queue-btn" onclick="clearQueue()" style="background-color: #e74c3c;">Clear Queue</button>
+            <button id="clear-queue-btn" onclick="clearQueue()" style="background-color: #e74c3c; display: none;">Clear Queue</button>
           </div>
           <ul id="queue"></ul>
           <div id="queue-empty" style="display: none; text-align: center; color: #666; padding: 20px;">
@@ -997,6 +997,17 @@
         loginDiv.style.display = 'none';
         loginDiv.style.visibility = 'hidden';
         console.log('Login div hidden for authenticated user with role:', role);
+        
+        // Apply immediate role-based UI changes
+        const clearQueueBtn = document.getElementById('clear-queue-btn');
+        if (role === 'host' && clearQueueBtn) {
+          clearQueueBtn.style.display = 'inline-block';
+          console.log('Clear queue button shown for host');
+        } else if (role === 'listener' && clearQueueBtn) {
+          clearQueueBtn.style.display = 'none';
+          console.log('Clear queue button hidden for listener');
+        }
+        
       } else if (!role && loginDiv) {
         // Show login for unauthenticated users
         loginDiv.style.display = 'block';
@@ -2074,16 +2085,21 @@
       const queueEmpty = document.getElementById("queue-empty");
       const clearBtn = document.getElementById("clear-queue-btn");
       
+      console.log('updateQueueDisplay called - queueCount:', queueCount, 'userRole:', window.userRole);
+      
       if (queueCount === 0) {
         queueEmpty.style.display = "block";
         clearBtn.style.display = "none";
+        console.log('Queue empty - hiding clear button');
       } else {
         queueEmpty.style.display = "none";
         // Only show clear button for hosts
         if (window.userRole === 'host') {
           clearBtn.style.display = "inline-block";
+          console.log('Queue not empty, showing clear button for host');
         } else {
           clearBtn.style.display = "none";
+          console.log('Queue not empty, hiding clear button for non-host role:', window.userRole);
         }
       }
     }
@@ -2477,16 +2493,19 @@
             const btn = document.createElement('button');
             
             // Show appropriate button based on role
+            console.log('Creating track button for role:', window.userRole);
             if (window.userRole === 'host' || window.userRole === 'listener') {
               btn.textContent = 'Add to Queue';
               btn.onclick = () => queueTrack(t.uri, `${t.name} - ${t.artists.map(a => a.name).join(', ')}`);
               li.appendChild(btn);
+              console.log('Added "Add to Queue" button for role:', window.userRole);
             } else {
               // Guests get a different message
               const guestMsg = document.createElement('small');
               guestMsg.style.cssText = 'color: #9C27B0; font-style: italic; margin-left: 10px;';
               guestMsg.textContent = '(Vote on queued tracks instead!)';
               li.appendChild(guestMsg);
+              console.log('Added guest message for role:', window.userRole);
             }
             
             ul.appendChild(li);
@@ -2758,6 +2777,12 @@
         if (roleSelection) {
           console.log('Hiding role selection for host');
           roleSelection.style.display = 'none';
+        }
+        
+        // Show host-only controls for hosts
+        const clearQueueBtn = document.getElementById('clear-queue-btn');
+        if (clearQueueBtn) {
+          clearQueueBtn.style.display = 'inline-block';
         }
         
         // Ensure restart button is visible for hosts
