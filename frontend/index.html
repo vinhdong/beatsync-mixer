@@ -1946,49 +1946,7 @@
 
     socket.on("vote_confirmed", data => {
       console.log(`Vote confirmed: ${data.vote_type} on ${data.track_uri}`);
-      
-      // Show a subtle confirmation feedback to the user
-      const safeId = data.track_uri.replace(/[^a-zA-Z0-9]/g, '_');
-      const trackElement = document.querySelector(`li[data-track-uri="${data.track_uri}"]`);
-      
-      if (trackElement) {
-        // Add a brief success indicator
-        const confirmation = document.createElement('span');
-        confirmation.style.cssText = `
-          position: absolute;
-          top: 50%;
-          left: 50%;
-          transform: translate(-50%, -50%);
-          background: rgba(29, 185, 84, 0.9);
-          color: white;
-          padding: 4px 8px;
-          border-radius: 12px;
-          font-size: 11px;
-          font-weight: bold;
-          z-index: 10;
-          pointer-events: none;
-        `;
-        confirmation.textContent = data.vote_type === 'up' ? '👍 Voted!' : '👎 Voted!';
-        
-        trackElement.style.position = 'relative';
-        trackElement.appendChild(confirmation);
-        
-        // Remove the confirmation after 1.5 seconds
-        setTimeout(() => {
-          if (confirmation.parentElement) {
-            confirmation.remove();
-          }
-        }, 1500);
-      }
-      
-      // Update local vote data to ensure consistency
-      if (!voteData[data.track_uri]) {
-        voteData[data.track_uri] = { up: 0, down: 0 };
-      }
-      voteData[data.track_uri] = {
-        up: data.up_votes,
-        down: data.down_votes
-      };
+      // Vote was processed successfully - no visual feedback needed
     });
 
     socket.on("chat_message", data => {
@@ -2011,7 +1969,7 @@
         return;
       }
       
-      // Add visual feedback to the clicked button immediately
+      // Add visual feedback to the clicked button
       if (buttonElement) {
         buttonElement.classList.remove('just-voted');
         // Force reflow to restart animation
@@ -2032,98 +1990,11 @@
       
       console.log(`Voting ${voteType} on track: ${trackUri}`);
       
-      // Store current counts for rollback if needed
-      const safeId = trackUri.replace(/[^a-zA-Z0-9]/g, '_');
-      const upElement = document.getElementById(`up-${safeId}`);
-      const downElement = document.getElementById(`down-${safeId}`);
-      const originalUpCount = parseInt(upElement?.textContent) || 0;
-      const originalDownCount = parseInt(downElement?.textContent) || 0;
-      
-      // Send vote to backend
+      // Send vote to backend - let backend handle everything
       socket.emit('vote_add', {
         track_uri: trackUri,
         vote: voteType
       });
-      
-      // Provide immediate optimistic UI feedback
-      const countElement = document.getElementById(`${voteType}-${safeId}`);
-      if (countElement) {
-        const currentCount = parseInt(countElement.textContent) || 0;
-        countElement.textContent = currentCount + 1;
-        
-        // Update score immediately
-        const scoreElement = document.getElementById(`score-${safeId}`);
-        if (scoreElement) {
-          const upVotes = parseInt(upElement?.textContent) || 0;
-          const downVotes = parseInt(downElement?.textContent) || 0;
-          const netScore = upVotes - downVotes;
-          
-          scoreElement.textContent = `Score: ${netScore >= 0 ? '+' : ''}${netScore}`;
-          
-          // Color code the score
-          if (netScore > 0) {
-            scoreElement.style.color = '#1db954';
-            scoreElement.style.backgroundColor = 'rgba(29, 185, 84, 0.1)';
-          } else if (netScore < 0) {
-            scoreElement.style.color = '#e74c3c';
-            scoreElement.style.backgroundColor = 'rgba(231, 76, 60, 0.1)';
-          } else {
-            scoreElement.style.color = '#666';
-            scoreElement.style.backgroundColor = '#333';
-          }
-        }
-        
-        // Update local vote data optimistically
-        if (!voteData[trackUri]) {
-          voteData[trackUri] = { up: originalUpCount, down: originalDownCount };
-        }
-        if (voteType === 'up') {
-          voteData[trackUri].up++;
-        } else {
-          voteData[trackUri].down++;
-        }
-        
-        // Reorder queue based on optimistic update
-        reorderQueueByVotes();
-      }
-      
-      // Set a timeout to rollback optimistic update if no confirmation is received
-      setTimeout(() => {
-        // Check if we got a confirmation by looking for the success indicator
-        const trackElement = document.querySelector(`li[data-track-uri="${trackUri}"]`);
-        const hasConfirmation = trackElement?.querySelector('span[style*="rgba(29, 185, 84, 0.9)"]');
-        
-        if (!hasConfirmation) {
-          console.log('Vote confirmation not received, rolling back optimistic update');
-          // Rollback the optimistic update
-          if (upElement) upElement.textContent = originalUpCount;
-          if (downElement) downElement.textContent = originalDownCount;
-          
-          // Restore original vote data
-          voteData[trackUri] = { up: originalUpCount, down: originalDownCount };
-          
-          // Update score back to original
-          const scoreElement = document.getElementById(`score-${safeId}`);
-          if (scoreElement) {
-            const netScore = originalUpCount - originalDownCount;
-            scoreElement.textContent = `Score: ${netScore >= 0 ? '+' : ''}${netScore}`;
-            
-            if (netScore > 0) {
-              scoreElement.style.color = '#1db954';
-              scoreElement.style.backgroundColor = 'rgba(29, 185, 84, 0.1)';
-            } else if (netScore < 0) {
-              scoreElement.style.color = '#e74c3c';
-              scoreElement.style.backgroundColor = 'rgba(231, 76, 60, 0.1)';
-            } else {
-              scoreElement.style.color = '#666';
-              scoreElement.style.backgroundColor = '#333';
-            }
-          }
-          
-          // Reorder queue again with corrected data
-          reorderQueueByVotes();
-        }
-      }, 3000); // Give 3 seconds for confirmation
     }
 
     function sendChatMessage(event) {

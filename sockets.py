@@ -165,14 +165,6 @@ def register_handlers():
                     {"track_uri": track_uri, "up_votes": up_votes, "down_votes": down_votes}
                 )
                 
-                # Send confirmation back to the voter
-                emit("vote_confirmed", {
-                    "track_uri": track_uri, 
-                    "vote_type": vote_type,
-                    "up_votes": up_votes, 
-                    "down_votes": down_votes
-                })
-                
         except Exception as e:
             print(f"Error in vote_add: {e}")
             import traceback
