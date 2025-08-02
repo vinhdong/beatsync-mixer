@@ -138,18 +138,10 @@ def register_handlers():
                 return
 
             with get_db() as db:
-                # First, remove any existing votes from this user for this track
-                existing_votes = db.query(Vote).filter(
-                    Vote.track_uri == track_uri,
-                    Vote.user_id == user_id
-                ).all()
-                
-                for vote in existing_votes:
-                    db.delete(vote)
-                
-                # Add the new vote
+                # Simply add the vote (allow multiple votes per user per track)
                 vote = Vote(track_uri=track_uri, vote_type=vote_type, user_id=user_id)
                 db.add(vote)
+                db.commit()  # Make sure to commit the transaction
                 
                 # Calculate updated vote counts for this track
                 up_votes = (
