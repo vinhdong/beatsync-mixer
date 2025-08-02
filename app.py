@@ -372,9 +372,13 @@ def playlist_tracks(playlist_id):
 @app.route("/recommend/<track_uri>")
 def recommend(track_uri):
     """Get similar tracks from Last.fm for a queued track"""
-    # First, try to get track info from Spotify API
-    sp = get_spotify_client()
-    if not sp:
+    # Get access token from session
+    token_info = session.get("spotify_token")
+    if not token_info:
+        return jsonify({"error": "Not authenticated"}), 401
+    
+    access_token = token_info.get("access_token")
+    if not access_token:
         return jsonify({"error": "Not authenticated"}), 401
     
     try:
@@ -384,10 +388,14 @@ def recommend(track_uri):
         
         track_id = track_uri.split(":")[-1]
         
-        # Get track info from Spotify using Spotipy
-        track_data = sp.track(track_id)
+        # Get track info from Spotify using manual IP-based API
+        track_data = manual_get_track_info(access_token, track_id)
+        if not track_data:
+            return jsonify({"error": "Failed to fetch track info from Spotify"}), 500
+        
         artist = track_data["artists"][0]["name"]
         title = track_data["name"]
+        print(f"Getting Last.fm recommendations for: {artist} - {title}")
         
         try:
             # Get similar tracks from Last.fm
@@ -402,6 +410,7 @@ def recommend(track_uri):
                     "url": similar.item.get_url()
                 })
             
+            print(f"Found {len(recommendations)} recommendations for {artist} - {title}")
             return jsonify({"recommendations": recommendations})
             
         except pylast.PyLastError as e:
@@ -1880,3 +1889,38 @@ def fetch_user_profile():
     except Exception as e:
         print(f"Error fetching user profile: {e}")
         return jsonify({"error": "Failed to fetch user profile"}), 500
+
+
+def manual_get_track_info(access_token, track_id):
+    """Manual get track info using hardcoded Spotify IPs as DNS fallback"""
+    
+    # Spotify IP addresses (multiple for redundancy)
+    ip_addresses = ["35.186.224.24", "104.154.127.126", "34.102.136.180"]
+    
+    # Try each IP directly - bypass DNS completely
+    for ip in ip_addresses:
+        try:
+            # Get track info directly from IP, use Host header for TLS
+            url = f"https://{ip}/v1/tracks/{track_id}"
+            headers = {
+                'Host': 'api.spotify.com',
+                'Authorization': f'Bearer {access_token}',
+                'Content-Type': 'application/json'
+            }
+            
+            req_session = requests.Session()
+            
+            response = req_session.get(
+                url,
+                headers=headers,
+                timeout=(3, 3),
+                verify=False  # Skip SSL verification since we're using IP
+            )
+            
+            if response.status_code == 200:
+                return response.json()
+                
+        except Exception as e:
+            continue
+    
+    return None
