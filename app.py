@@ -16,12 +16,14 @@ load_dotenv()
 app = Flask(__name__, static_folder="frontend", static_url_path="")
 app.config["SECRET_KEY"] = os.getenv("FLASK_SECRET")
 
-# Configure session for production with better persistence
+# Configure session for production with OAuth compatibility
 app.config['SESSION_COOKIE_SECURE'] = True if os.getenv('FLASK_ENV') == 'production' else False
 app.config['SESSION_COOKIE_HTTPONLY'] = True
-app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'  # Allow cross-site requests for OAuth callbacks
 app.config['PERMANENT_SESSION_LIFETIME'] = datetime.timedelta(hours=24)  # 24 hour sessions
-app.config['SESSION_REFRESH_EACH_REQUEST'] = True  # Refresh session on each request
+app.config['SESSION_REFRESH_EACH_REQUEST'] = False  # Don't refresh during OAuth flow to preserve state
+app.config['SESSION_COOKIE_NAME'] = 'beatsync_session'  # Custom session name
+app.config['SESSION_COOKIE_DOMAIN'] = None  # Let Flask handle domain automatically
 
 # Configure caching
 app.config['CACHE_TYPE'] = 'SimpleCache'  # In-memory cache for development
@@ -29,7 +31,7 @@ app.config['CACHE_DEFAULT_TIMEOUT'] = 300  # 5 minutes
 cache = Cache(app)
 
 
-# OAuth setup for Spotify with improved timeout and retry settings
+# OAuth setup for Spotify with improved timeout and state handling
 oauth = OAuth(app)
 oauth.register(
     name="spotify",
@@ -42,6 +44,9 @@ oauth.register(
         "timeout": 30,  # 30 second timeout for requests
         "retries": 3,   # Retry failed requests up to 3 times
     },
+    # Additional OAuth settings for better state handling
+    server_metadata_url=None,  # Don't auto-discover, use explicit URLs
+    authorize_params={'show_dialog': 'false'},  # Don't force re-authorization
 )
 
 
@@ -105,6 +110,10 @@ Base.metadata.create_all(engine)
 def ensure_session():
     """Ensure session is valid and handle session persistence issues"""
     try:
+        # Skip session modification during OAuth flow to preserve state
+        if request.path in ['/login', '/callback']:
+            return
+            
         # Make session permanent to extend lifetime
         session.permanent = True
         
@@ -118,19 +127,20 @@ def ensure_session():
             return
             
         # Ensure all users have a role (fallback for lost sessions)
-        if not session.get('role') and request.endpoint not in ['health', 'session_info', 'login', 'callback']:
+        if not session.get('role') and request.endpoint not in ['health', 'session_info', 'oauth_debug', 'select_role']:
             session['role'] = 'guest'
             session['user_id'] = f"guest_{datetime.datetime.now().timestamp()}"
             session['display_name'] = 'Guest'
             
     except Exception as e:
         print(f"Session initialization error: {e}")
-        # Reset session on error
-        session.clear()
-        session['role'] = 'guest'
-        session['user_id'] = f"guest_{datetime.datetime.now().timestamp()}"
-        session['display_name'] = 'Guest'
-        session['initialized'] = True
+        # Only reset session if not in OAuth flow
+        if request.path not in ['/login', '/callback']:
+            session.clear()
+            session['role'] = 'guest'
+            session['user_id'] = f"guest_{datetime.datetime.now().timestamp()}"
+            session['display_name'] = 'Guest'
+            session['initialized'] = True
 
 
 # Health check
@@ -279,8 +289,19 @@ def callback():
             print(f"OAuth callback error on attempt {attempt + 1}: {e}")
             print(f"Error type: {type(e).__name__}")
             
-            # Check if it's a connection/timeout error that might be retryable
-            if any(error_type in str(e).lower() for error_type in ['timeout', 'connection', 'newconnectionerror', 'maxretryerror']):
+            # Handle specific error types
+            error_str = str(e).lower()
+            error_type = type(e).__name__
+            
+            # Don't retry on CSRF/state errors - these won't be fixed by retrying
+            if 'mismatchingstateerror' in error_type.lower() or 'state' in error_str:
+                print("State mismatch error detected - redirecting to retry auth flow")
+                # Clear any problematic session data and redirect to login
+                session.pop('requested_role', None)  # Keep the role request
+                return redirect("/select-role?error=csrf_error")
+            
+            # Only retry on connection/timeout errors
+            if any(error_type in error_str for error_type in ['timeout', 'connection', 'newconnectionerror', 'maxretryerror']):
                 if attempt < max_retries - 1:
                     print(f"Retrying OAuth callback in {retry_delay} seconds...")
                     time.sleep(retry_delay)
@@ -953,6 +974,16 @@ def select_role():
         <div style="background: #ffe6e6; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #e74c3c; color: #c0392b;">
             <strong>⚠️ Host Position Taken</strong><br>
             Someone is already hosting a session. You can join as a listener or wait for the current host to sign out.
+        </div>
+        """
+    elif error == 'csrf_error':
+        error_message = """
+        <div style="background: #ffe6e6; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #e74c3c; color: #c0392b;">
+            <strong>⚠️ Session Security Error</strong><br>
+            Your session expired during authentication. This is a security feature to protect your account.<br><br>
+            <strong>Please try:</strong><br>
+            1. Click the button below to try again<br>
+            2. If it keeps failing, clear your browser cookies and try again
         </div>
         """
     elif error == 'oauth_failed':
