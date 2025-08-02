@@ -112,13 +112,13 @@ oauth.register(
     authorize_url="https://accounts.spotify.com/authorize",
     client_kwargs={
         "scope": "user-read-playback-state user-modify-playback-state streaming playlist-read-private user-read-private user-read-email",
-        "timeout": 120,  # Much longer timeout
+        "timeout": 60,  # Reasonable timeout
     },
-    # Use the custom session with aggressive retry handling
+    # Use the custom session with retry handling
     session=create_spotify_session(),
     # Additional OAuth settings
     server_metadata_url=None,  # Don't auto-discover, use explicit URLs
-    authorize_params={'show_dialog': 'false'},  # Don't force re-authorization
+    authorize_params={'show_dialog': 'false'},  # Don't force login dialog every time
 )
 
 
@@ -300,14 +300,8 @@ def login():
     try:
         # Store the requested role in session
         requested_role = request.args.get('role', 'listener')
-        retry_attempt = request.args.get('retry', '0')
         
-        print(f"Login route called with role: {requested_role}, retry: {retry_attempt}")
-        
-        # Prevent infinite retry loops
-        if retry_attempt and int(retry_attempt) > 3:
-            print(f"Too many retry attempts ({retry_attempt}), redirecting to error")
-            return redirect("/select-role?error=oauth_failed")
+        print(f"Login route called with role: {requested_role}")
         
         session['requested_role'] = requested_role
         
@@ -318,7 +312,6 @@ def login():
             return redirect("/select-role?error=oauth_failed")
         
         print(f"Initiating OAuth flow with redirect URI: {redirect_uri}")
-        print(f"Session before OAuth: {dict(session)}")
         
         # Ensure session is properly initialized before OAuth
         if not session.get('initialized'):
@@ -328,11 +321,7 @@ def login():
         # Make session permanent to ensure it persists through OAuth flow
         session.permanent = True
         
-        # Clear any previous callback counts to prevent issues
-        session.pop('callback_count', None)
-        
-        # Always use the same redirect flow - don't force fresh state on retries
-        # The callback will handle state validation properly
+        # Always use fresh OAuth state
         return oauth.spotify.authorize_redirect(redirect_uri)
         
     except Exception as e:
@@ -345,303 +334,82 @@ def login():
 # Callback route
 @app.route("/callback")
 def callback():
-    max_retries = 2  # Reduced retries for faster failure detection
-    retry_delay = 3  # Slightly longer initial delay
-    
     print(f"OAuth callback received")
-    print(f"Session at callback start: {dict(session)}")
     print(f"Request args: {dict(request.args)}")
+    print(f"Session at callback start: {dict(session)}")
     
-    # Debug: List all state-related keys in session
-    state_keys = [key for key in session.keys() if key.startswith('_state_spotify_')]
-    print(f"Current state keys in session: {state_keys}")
-    
-    # Check if this is a repeated callback from an infinite loop
-    callback_count = session.get('callback_count', 0)
-    if callback_count > 2:
-        print(f"Too many callback attempts ({callback_count}), breaking potential loop")
-        session.pop('callback_count', None)
-        return redirect("/select-role?error=oauth_failed")
-    
-    session['callback_count'] = callback_count + 1
-    
-    # Get the state parameter from the callback URL
-    callback_state = request.args.get('state')
-    print(f"Callback state from URL: {callback_state}")
-    
-    # Store/restore the correct OAuth state to prevent CSRF errors on retries
-    if callback_state:
-        # Find the session key for this state and ensure it matches
-        state_key = f'_state_spotify_{callback_state}'
-        print(f"Looking for state key: {state_key}")
+    try:
+        # Get access token from Spotify
+        token = oauth.spotify.authorize_access_token()
+        print("Successfully obtained Spotify access token")
         
-        if state_key not in session:
-            # If the state isn't in session, create it with proper structure that Authlib expects
-            print(f"State {callback_state} not found in session, creating it with proper structure")
-            import time
-            import os
-            session[state_key] = {
-                'data': {
-                    'redirect_uri': os.getenv('SPOTIFY_REDIRECT_URI', 'https://beatsync-mixer-5715861af181.herokuapp.com/callback')
-                },
-                'exp': time.time() + 600  # 10 minutes from now
-            }
+        # Store token in session
+        session["spotify_token"] = token
+        oauth.spotify.token = token
+        
+        # Get user profile
+        user_response = oauth.spotify.get("https://api.spotify.com/v1/me", token=token)
+        
+        if user_response.status_code == 200:
+            user_data = user_response.json()
+            user_id = user_data.get("id")
+            display_name = user_data.get("display_name", user_id)
+            print(f"Successfully fetched user profile: {user_id}")
         else:
-            # Check if the state has expired and refresh it
-            state_data = session[state_key]
-            if isinstance(state_data, dict) and 'exp' in state_data:
-                import time
-                current_time = time.time()
-                if current_time > state_data['exp']:
-                    print(f"State {callback_state} has expired ({current_time} > {state_data['exp']}), refreshing")
-                    # Extend the expiration time
-                    state_data['exp'] = current_time + 600  # 10 minutes from now
-                    session[state_key] = state_data
-                else:
-                    print(f"State {callback_state} found in session and not expired")
-            elif isinstance(state_data, str):
-                # Convert old string format to proper dict format
-                print(f"Converting state {callback_state} from string to proper dict format")
-                session[state_key] = {
-                    'data': {
-                        'redirect_uri': os.getenv('SPOTIFY_REDIRECT_URI', 'https://beatsync-mixer-5715861af181.herokuapp.com/callback')
-                    },
-                    'exp': time.time() + 600
-                }
-            else:
-                print(f"State {callback_state} found in session (non-dict format)")
-    
-    # Before starting retry loop, backup the current session state
-    original_session_backup = {}
-    if callback_state:
-        state_key = f'_state_spotify_{callback_state}'
-        # Create a backup of all OAuth-related session data
-        for key in list(session.keys()):
-            if key.startswith('_state_spotify_') or key in ['oauth2_token', 'spotify_token']:
-                original_session_backup[key] = session[key]
-        print(f"Backed up {len(original_session_backup)} session keys: {list(original_session_backup.keys())}")
-    
-    for attempt in range(max_retries):
-        try:
-            print(f"OAuth callback attempt {attempt + 1}/{max_retries}")
+            print("Failed to fetch user profile, using defaults")
+            user_id = f"user_{int(time.time())}"
+            display_name = "Spotify User"
+        
+        # Get the requested role from session
+        requested_role = session.get('requested_role', 'listener')
+        print(f"Requested role: {requested_role}")
+        
+        # Handle role assignment
+        if requested_role == 'host':
+            # Check if someone is already hosting
+            host_file = 'current_host.txt'
             
-            # Restore session state from backup before each attempt (except first)
-            if attempt > 0 and callback_state and original_session_backup:
-                print(f"Restoring session state from backup for attempt {attempt + 1}")
-                for key, value in original_session_backup.items():
-                    session[key] = value
-                    print(f"Restored session key: {key}")
+            if os.path.exists(host_file):
+                # Someone is already hosting
+                return redirect("/select-role?error=host_taken")
             
-            # Ensure the state is properly set in session for this attempt
-            if callback_state:
-                state_key = f'_state_spotify_{callback_state}'
-                print(f"Checking state key: {state_key}")
-                print(f"Session keys before state validation: {list(session.keys())}")
-                
-                # Make sure the state key is still valid
-                if state_key in session:
-                    state_data = session[state_key]
-                    print(f"Found state data: {state_data}")
-                    if isinstance(state_data, dict) and 'exp' in state_data:
-                        current_time = time.time()
-                        print(f"State expiration check: current={current_time}, exp={state_data['exp']}")
-                        if current_time > state_data['exp']:
-                            # Extend expiration
-                            state_data['exp'] = current_time + 600
-                            session[state_key] = state_data
-                            print(f"Extended state expiration to: {state_data['exp']}")
-                    print(f"State key {state_key} validated for attempt {attempt + 1}")
-                else:
-                    print(f"State key {state_key} not found in session, available keys: {[k for k in session.keys() if '_state_' in k]}")
-                    # Try to find any existing OAuth state and use it
-                    oauth_states = [k for k in session.keys() if k.startswith('_state_spotify_')]
-                    if oauth_states:
-                        existing_state_key = oauth_states[0]
-                        print(f"Found existing OAuth state key: {existing_state_key}, copying to expected key")
-                        session[state_key] = session[existing_state_key]
-                    else:
-                        print(f"No existing OAuth states found, creating new state structure")
-                        # Create a proper state structure matching what the OAuth library expects
-                        session[state_key] = {
-                            'data': {
-                                'redirect_uri': os.getenv('SPOTIFY_REDIRECT_URI', 'https://beatsync-mixer-5715861af181.herokuapp.com/callback')
-                            },
-                            'exp': time.time() + 600  # 10 minutes from now
-                        }
+            # Set as host and create host file
+            session["role"] = "host"
+            session["user_id"] = user_id
+            session["display_name"] = display_name
             
-            # Try to get the access token with improved error handling
-            try:
-                token = oauth.spotify.authorize_access_token()
-                print("Successfully obtained Spotify access token")
-            except Exception as token_error:
-                error_str = str(token_error).lower()
-                print(f"OAuth token error: {token_error}")
-                print(f"Session keys after error: {list(session.keys())}")
-                
-                # Check for specific network/DNS issues
-                if any(keyword in error_str for keyword in ['lookup timed out', 'newconnectionerror', 'dns', 'timeout']):
-                    print(f"Network/DNS error detected: {token_error}")
-                    # For DNS/network issues, wait longer before retry
-                    if attempt < max_retries - 1:
-                        wait_time = 5 + (attempt * 3)  # Progressive wait: 5s, 8s
-                        print(f"Waiting {wait_time}s before retry due to network issue...")
-                        print(f"Will restore session backup on next attempt")
-                        time.sleep(wait_time)
-                        continue
-                    else:
-                        print("Max retries reached for network issue")
-                        # Even on final failure, try to preserve session for next attempt
-                        if original_session_backup:
-                            print("Restoring session backup before final failure")
-                            for key, value in original_session_backup.items():
-                                session[key] = value
-                        raise token_error
-                else:
-                    # For other errors (like CSRF/state mismatch), also try to restore session
-                    if 'state' in error_str or 'csrf' in error_str:
-                        print(f"State/CSRF error detected: {token_error}")
-                        if attempt < max_retries - 1 and original_session_backup:
-                            print("Restoring session backup due to state error")
-                            for key, value in original_session_backup.items():
-                                session[key] = value
-                            wait_time = 2 + attempt  # Shorter wait for state errors
-                            print(f"Waiting {wait_time}s before retry...")
-                            time.sleep(wait_time)
-                            continue
-                    # For other errors, re-raise immediately
-                    raise token_error
-            session["spotify_token"] = token
-            oauth.spotify.token = token
+            # Create host file to track current host
+            with open(host_file, 'w') as f:
+                f.write(f"{user_id}|{display_name}")
             
-            # Clear callback count on success
-            session.pop('callback_count', None)
+            print(f"User {user_id} is now hosting")
             
-            # Fetch user profile with retry logic
-            user_response = None
-            for profile_attempt in range(3):
-                try:
-                    user_response = oauth.spotify.get("https://api.spotify.com/v1/me", token=token)
-                    if user_response.status_code == 200:
-                        break
-                    else:
-                        print(f"Profile fetch attempt {profile_attempt + 1} failed with status {user_response.status_code}")
-                        if profile_attempt < 2:
-                            time.sleep(1)
-                except Exception as e:
-                    print(f"Profile fetch attempt {profile_attempt + 1} error: {e}")
-                    if profile_attempt < 2:
-                        time.sleep(1)
+        else:
+            # Set as listener
+            session["role"] = "listener"
+            session["user_id"] = user_id
+            session["display_name"] = display_name
             
-            if user_response and user_response.status_code == 200:
-                user_data = user_response.json()
-                user_id = user_data.get("id")
-                display_name = user_data.get("display_name", user_id)
-                print(f"Successfully fetched user profile: {user_id}")
-            else:
-                print("Failed to fetch user profile, using defaults")
-                # Default to generic user info if we can't fetch profile
-                user_id = f"user_{int(time.time())}"
-                display_name = "Spotify User"
-            
-            # Get the requested role from session - with fallback to URL parameter
-            requested_role = session.get('requested_role') or request.args.get('role', 'listener')
-            print(f"Requested role: {requested_role}")
-            
-            # Handle role assignment
-            if requested_role == 'host':
-                # Check if someone is already hosting
-                host_file = 'current_host.txt'
-                
-                if os.path.exists(host_file):
-                    # Someone is already hosting
-                    return redirect("/select-role?error=host_taken")
-                
-                # Set as host and create host file
-                session["role"] = "host"
-                session["user_id"] = user_id
-                session["display_name"] = display_name
-                
-                # Create host file to track current host
-                with open(host_file, 'w') as f:
-                    f.write(f"{user_id}|{display_name}")
-                
-                print(f"User {user_id} is now hosting")
-                
-            else:
-                # Set as listener
-                session["role"] = "listener"
-                session["user_id"] = user_id
-                session["display_name"] = display_name
-                
-                print(f"User {user_id} joined as listener")
-            
-            # Clear the requested role from session
-            session.pop('requested_role', None)
-            
-            # Ensure session is properly saved
-            session.permanent = True
-            
-            print(f"Final session state: {dict(session)}")
-            return redirect("/")
-            
-        except Exception as e:
-            print(f"OAuth callback error on attempt {attempt + 1}: {e}")
-            print(f"Error type: {type(e).__name__}")
-            
-            # Handle specific error types
-            error_str = str(e).lower()
-            error_type = type(e).__name__
-            
-            # Don't retry on CSRF/state errors - redirect to error page instead of creating loop
-            if 'mismatchingstateerror' in error_type.lower() or 'state' in error_str:
-                print("State mismatch error detected - breaking potential redirect loop")
-                
-                # Clear callback count and problematic session data
-                session.pop('callback_count', None)
-                session.clear()
-                
-                # Redirect to error page with helpful message instead of creating redirect loop
-                return redirect("/select-role?error=csrf_error")
-            
-            # Only retry on connection/timeout errors
-            if any(error_keyword in error_str for error_keyword in ['timeout', 'connection', 'newconnectionerror', 'maxretryerror', 'lookup timed out', 'dns']):
-                if attempt < max_retries - 1:
-                    print(f"Retrying OAuth callback in {retry_delay} seconds...")
-                    time.sleep(retry_delay)
-                    retry_delay *= 1.5  # Gentler exponential backoff
-                    continue
-            
-            # Log the full traceback for debugging
-            import traceback
-            print(f"Full traceback: {traceback.format_exc()}")
-            
-            # If all retries failed or it's a non-retryable error, redirect with error
-            break
-    
-    # All retries failed
-    print("All OAuth callback attempts failed")
-    
-    # Check if we should switch to demo mode
-    attempt_count = session.get('oauth_attempt_count', 1)
-    requested_role = session.get('requested_role', 'listener')
-    
-    if attempt_count > 1:
-        print(f"Multiple OAuth failures detected, redirecting to demo mode")
-        session.pop('callback_count', None)
-        return redirect(f"/demo-login?role={requested_role}")
-    
-    # Final attempt to restore session for next try
-    if original_session_backup:
-        print("Final session backup restoration before failure redirect")
-        for key, value in original_session_backup.items():
-            session[key] = value
-        print(f"Restored {len(original_session_backup)} session keys for future attempts")
-    
-    session.pop('callback_count', None)
-    
-    # Increment attempt count and redirect to smart retry
-    session['oauth_attempt_count'] = attempt_count + 1
-    return redirect(f"/login?role={requested_role}&attempt={attempt_count + 1}")
+            print(f"User {user_id} joined as listener")
+        
+        # Clear the requested role from session
+        session.pop('requested_role', None)
+        
+        # Ensure session is properly saved
+        session.permanent = True
+        
+        print(f"Final session state: {dict(session)}")
+        return redirect("/")
+        
+    except Exception as e:
+        print(f"OAuth callback error: {e}")
+        import traceback
+        print(f"Full traceback: {traceback.format_exc()}")
+        
+        # Clear session on error to prevent issues
+        session.clear()
+        
+        return redirect("/select-role?error=oauth_failed")
 
 
 # Fetch playlists
@@ -811,72 +579,13 @@ def index():
     role = session.get("role", "guest")
     user_id = session.get("user_id", "")
     display_name = session.get("display_name", "Guest")
-    emergency_mode = session.get("emergency_mode", False)
-    demo_mode = session.get("demo_mode", False) or request.args.get('demo') == 'true'
-    
-    # Check for demo mode parameter and update session
-    if request.args.get('demo') == 'true':
-        session['demo_mode'] = True
-        demo_mode = True
-    
-    # Check for demo mode
-    if demo_mode:
-        demo_banner = """
-        <div id="demo-banner" style="
-            background: linear-gradient(135deg, #f39c12, #e67e22);
-            color: white;
-            padding: 15px;
-            text-align: center;
-            font-weight: bold;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
-            border-bottom: 3px solid #d35400;
-            margin-bottom: 20px;
-        ">
-            🎭 DEMO MODE ACTIVE 🎭<br>
-            <small style="font-weight: normal; opacity: 0.9;">
-                OAuth connection to Spotify failed due to network issues. 
-                App is running in demo mode - chat, queue, and voting work normally.
-                Actual music playback requires real Spotify connection.
-                <a href="/login?role=host&attempt=1" style="color: #fff; text-decoration: underline; margin-left: 10px;">Try OAuth Again</a>
-            </small>
-        </div>
-        """
-        # Insert demo banner after body tag
-        html_content = html_content.replace('<body>', '<body>' + demo_banner)
-    
-    # Check for emergency mode parameter
-    if request.args.get('emergency') == 'true' or emergency_mode:
-        emergency_banner = """
-        <div id="emergency-banner" style="
-            background: linear-gradient(135deg, #e74c3c, #c0392b);
-            color: white;
-            padding: 15px;
-            text-align: center;
-            font-weight: bold;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
-            border-bottom: 3px solid #a93226;
-            margin-bottom: 20px;
-        ">
-            🚨 EMERGENCY MODE ACTIVE 🚨<br>
-            <small style="font-weight: normal; opacity: 0.9;">
-                Limited functionality due to Spotify connection issues. 
-                Some features like playlist integration and playback control may not work.
-                <a href="/login?role=host&attempt=1" style="color: #fff; text-decoration: underline; margin-left: 10px;">Try Normal Mode Again</a>
-            </small>
-        </div>
-        """
-        # Insert emergency banner after body tag
-        html_content = html_content.replace('<body>', '<body>' + emergency_banner)
-    
     # Inject JavaScript variables
     role_script = f"""
     <script>
         window.userRole = '{role}';
         window.userId = '{user_id}';
         window.displayName = '{display_name}';
-        window.emergencyMode = {str(emergency_mode).lower()};
         console.log('User role:', window.userRole);
-        console.log('Emergency mode:', window.emergencyMode);
     </script>
     """
     
@@ -1387,15 +1096,7 @@ def select_role():
             <strong>Please try:</strong><br>
             1. Wait 30 seconds and try again<br>
             2. Clear browser cache and cookies<br>
-            3. Try a different browser or incognito mode<br><br>
-            <strong>Alternative:</strong><br>
-            If the issue persists, you can start an emergency session without full Spotify integration.
-        </div>
-        <div style="text-align: center; margin-bottom: 20px;">
-            <a href="/emergency-host" style="background-color: #e74c3c; color: white; padding: 12px 24px; text-decoration: none; border-radius: 25px; font-weight: bold; display: inline-block; margin: 5px;">
-                🚨 Emergency Host Mode
-            </a>
-            <br><small style="color: #666; margin-top: 10px; display: block;">Limited functionality - for when OAuth fails</small>
+            3. Try a different browser or incognito mode
         </div>
         """
     
@@ -1664,61 +1365,8 @@ def clear_session_and_login():
     # Clear all session data
     session.clear()
     
-    # Add a small delay to ensure session is cleared
-    time.sleep(0.1)
-    
-    return redirect(f"/login?role={requested_role}&retry=1")
+    return redirect(f"/login?role={requested_role}")
 
-
-@app.route("/emergency-host")
-def emergency_host():
-    """Emergency host mode when OAuth fails - limited functionality"""
-    print("Emergency host mode activated due to OAuth failures")
-    
-    # Check if someone is already hosting
-    host_file = 'current_host.txt'
-    if os.path.exists(host_file):
-        with open(host_file, 'r') as f:
-            current_host = f.read().strip()
-        return redirect("/select-role?error=host_taken")
-    
-    # Create emergency host session without Spotify token
-    import time
-    import uuid
-    
-    emergency_user_id = f"emergency_host_{int(time.time())}"
-    emergency_display_name = "Emergency Host (Limited Mode)"
-    
-    # Set session data
-    session["role"] = "host"
-    session["user_id"] = emergency_user_id
-    session["display_name"] = emergency_display_name
-    session["emergency_mode"] = True  # Flag to indicate limited functionality
-    session["created_at"] = datetime.now(timezone.utc).isoformat()
-    session.permanent = True
-    
-    # Create host file
-    with open(host_file, 'w') as f:
-        f.write(f"{emergency_user_id}|{emergency_display_name}")
-    
-    print(f"Emergency host created: {emergency_user_id}")
-    
-    # Clear any existing session data
-    db = SessionLocal()
-    try:
-        # Clear all previous data for clean start
-        db.query(Vote).delete()
-        db.query(QueueItem).delete()
-        db.query(ChatMessage).delete()
-        db.commit()
-        print("Cleared all previous session data for emergency mode")
-    except Exception as e:
-        db.rollback()
-        print(f"Error clearing data for emergency mode: {e}")
-    finally:
-        db.close()
-    
-    return redirect("/?emergency=true")
 
 
 @app.route("/restart-session", methods=["POST"])
