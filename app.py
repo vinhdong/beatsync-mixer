@@ -1,5 +1,6 @@
 import os
 import datetime
+from datetime import timezone
 import requests
 import pylast
 import time
@@ -1590,7 +1591,7 @@ def emergency_host():
     session["user_id"] = emergency_user_id
     session["display_name"] = emergency_display_name
     session["emergency_mode"] = True  # Flag to indicate limited functionality
-    session["created_at"] = datetime.utcnow().isoformat() + "+00:00"
+    session["created_at"] = datetime.now(timezone.utc).isoformat()
     session.permanent = True
     
     # Create host file
