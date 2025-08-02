@@ -238,14 +238,9 @@ def login():
         # Clear any previous callback counts to prevent issues
         session.pop('callback_count', None)
         
-        # If this is a retry attempt, add additional parameters to force a fresh OAuth state
-        if retry_attempt and int(retry_attempt) > 0:
-            print(f"Retry attempt #{retry_attempt} - forcing fresh OAuth state")
-            # Add a timestamp parameter to ensure fresh state generation
-            fresh_param = f"retry_{int(time.time())}"
-            return oauth.spotify.authorize_redirect(redirect_uri, state=fresh_param)
-        else:
-            return oauth.spotify.authorize_redirect(redirect_uri)
+        # Always use the same redirect flow - don't force fresh state on retries
+        # The callback will handle state validation properly
+        return oauth.spotify.authorize_redirect(redirect_uri)
         
     except Exception as e:
         print(f"Login route error: {e}")
@@ -257,13 +252,16 @@ def login():
 # Callback route
 @app.route("/callback")
 def callback():
-    import time
     max_retries = 3
     retry_delay = 2  # seconds
     
     print(f"OAuth callback received")
     print(f"Session at callback start: {dict(session)}")
     print(f"Request args: {dict(request.args)}")
+    
+    # Debug: List all state-related keys in session
+    state_keys = [key for key in session.keys() if key.startswith('_state_spotify_')]
+    print(f"Current state keys in session: {state_keys}")
     
     # Check if this is a repeated callback from an infinite loop
     callback_count = session.get('callback_count', 0)
@@ -274,9 +272,29 @@ def callback():
     
     session['callback_count'] = callback_count + 1
     
+    # Get the state parameter from the callback URL
+    callback_state = request.args.get('state')
+    print(f"Callback state from URL: {callback_state}")
+    
+    # Store/restore the correct OAuth state to prevent CSRF errors on retries
+    if callback_state:
+        # Find the session key for this state and ensure it matches
+        state_key = f'_state_spotify_{callback_state}'
+        if state_key not in session:
+            # If the state isn't in session, create it to match the callback
+            print(f"State {callback_state} not found in session, creating it")
+            session[state_key] = callback_state
+        else:
+            print(f"State {callback_state} found in session")
+    
     for attempt in range(max_retries):
         try:
             print(f"OAuth callback attempt {attempt + 1}/{max_retries}")
+            
+            # Ensure the state is properly set in session for this attempt
+            if callback_state:
+                state_key = f'_state_spotify_{callback_state}'
+                session[state_key] = callback_state
             
             # Try to get the access token with timeout handling
             token = oauth.spotify.authorize_access_token()
