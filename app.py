@@ -347,15 +347,43 @@ def callback():
     print(f"Session at callback start: {dict(session)}")
     
     try:
-        # Get access token from Spotify using our custom session
-        token = oauth.spotify.authorize_access_token()
-        print("Successfully obtained Spotify access token")
+        # Manual token exchange using our custom session to avoid DNS issues
+        code = request.args.get('code')
+        state = request.args.get('state')
+        
+        if not code:
+            print("No authorization code received")
+            return redirect("/select-role?error=oauth_failed")
+        
+        print(f"Received authorization code, exchanging for token...")
+        
+        # Create custom session with DNS fixes for token exchange
+        custom_session = create_spotify_session()
+        
+        # Manual token exchange
+        token_data = {
+            'grant_type': 'authorization_code',
+            'code': code,
+            'redirect_uri': os.getenv("SPOTIFY_REDIRECT_URI"),
+            'client_id': os.getenv("SPOTIFY_CLIENT_ID"),
+            'client_secret': os.getenv("SPOTIFY_CLIENT_SECRET"),
+        }
+        
+        token_response = custom_session.post(
+            'https://accounts.spotify.com/api/token',
+            data=token_data,
+            headers={'Content-Type': 'application/x-www-form-urlencoded'}
+        )
+        
+        if token_response.status_code != 200:
+            print(f"Token exchange failed: {token_response.status_code} - {token_response.text}")
+            return redirect("/select-role?error=oauth_failed")
+        
+        token = token_response.json()
+        print("Successfully obtained Spotify access token via custom session")
         
         # Store token in session
         session["spotify_token"] = token
-        
-        # Create custom session for API calls with DNS fixes
-        custom_session = create_spotify_session()
         
         # Get user profile using our custom session
         user_response = custom_session.get(
