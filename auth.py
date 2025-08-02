@@ -177,7 +177,6 @@ def callback():
         print(f"Session permanent: {session.permanent}")
         
         # Small delay to ensure session is saved (especially for filesystem sessions)
-        import time
         time.sleep(0.1)
         
         return redirect("/")
