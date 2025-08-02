@@ -1793,7 +1793,6 @@
       li.className = 'queue-item';
       li.style.position = 'relative';
       li.innerHTML = `
-        <span class="position-indicator" style="position: absolute; top: 5px; left: 5px; background: rgba(0,0,0,0.7); color: white; padding: 2px 6px; border-radius: 10px; font-size: 10px; font-weight: bold;">#${queueCount + 1}</span>
         <div>
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
             <span style="font-weight: bold;">${data.track_name || data.track_uri}</span>
@@ -2161,18 +2160,27 @@
           // Add class name for styling
           item.className = 'queue-item';
           
-          // Add position indicator
+          // Add "Up Next" indicator for the first item only
           const positionIndicator = item.querySelector('.position-indicator');
-          if (positionIndicator) {
-            positionIndicator.textContent = `#${index + 1}`;
+          if (index === 0) {
+            // First item gets "Up Next" label
+            if (positionIndicator) {
+              positionIndicator.textContent = 'Up Next';
+              positionIndicator.style.cssText = 'position: absolute; top: 5px; left: 5px; background: #1db954; color: white; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: bold;';
+            } else {
+              // Create "Up Next" indicator
+              const indicator = document.createElement('span');
+              indicator.className = 'position-indicator';
+              indicator.style.cssText = 'position: absolute; top: 5px; left: 5px; background: #1db954; color: white; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: bold;';
+              indicator.textContent = 'Up Next';
+              item.style.position = 'relative';
+              item.appendChild(indicator);
+            }
           } else {
-            // Create position indicator if it doesn't exist
-            const indicator = document.createElement('span');
-            indicator.className = 'position-indicator';
-            indicator.style.cssText = 'position: absolute; top: 5px; left: 5px; background: rgba(0,0,0,0.7); color: white; padding: 2px 6px; border-radius: 10px; font-size: 10px; font-weight: bold;';
-            indicator.textContent = `#${index + 1}`;
-            item.style.position = 'relative';
-            item.appendChild(indicator);
+            // Remove position indicator for other items
+            if (positionIndicator) {
+              positionIndicator.remove();
+            }
           }
           
           // Highlight the first track (next to play)
