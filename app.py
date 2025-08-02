@@ -1,5 +1,8 @@
 import os
 import json
+import ssl
+import redis
+from urllib.parse import urlparse
 from datetime import datetime, timezone, timedelta
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
@@ -51,10 +54,23 @@ app.config['SESSION_COOKIE_DOMAIN'] = None  # Let Flask handle domain automatica
 Session(app)
 
 # Configure caching
-# Configure caching - temporarily use SimpleCache due to Redis SSL issues
-# TODO: Fix Redis SSL configuration for production
-app.config['CACHE_TYPE'] = 'SimpleCache'
-print("Using SimpleCache (Redis temporarily disabled due to SSL issues)")
+# Configure caching with proper Redis SSL for Heroku
+redis_url = os.getenv('REDIS_URL')
+if redis_url:
+    app.config['CACHE_TYPE'] = 'RedisCache'
+    app.config['CACHE_REDIS_URL'] = redis_url
+    # Handle Heroku Redis SSL properly
+    if redis_url.startswith('rediss://'):
+        # For SSL Redis connections, we need to configure SSL context
+        app.config['CACHE_REDIS_CONNECTION_KWARGS'] = {
+            'ssl_cert_reqs': ssl.CERT_NONE,
+            'ssl_check_hostname': False,
+            'ssl_ca_certs': None
+        }
+    print("Using Redis cache for shared cache between dynos")
+else:
+    app.config['CACHE_TYPE'] = 'SimpleCache'
+    print("Using SimpleCache for local development")
 app.config['CACHE_DEFAULT_TIMEOUT'] = 300  # 5 minutes
 cache = Cache(app)
 
