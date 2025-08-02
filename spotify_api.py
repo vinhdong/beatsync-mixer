@@ -45,7 +45,7 @@ def exchange_token(auth_code):
         except Exception as e:
             print(f"Regular OAuth failed: {e}, falling back to manual IP")
     
-    # Production: Try regular accounts.spotify.com first, then IP fallback
+    # Production: Use manual IP approach with optimized timeouts
     token_data = {
         'grant_type': 'authorization_code',
         'code': auth_code,
@@ -54,30 +54,12 @@ def exchange_token(auth_code):
         'client_secret': os.getenv("SPOTIFY_CLIENT_SECRET")
     }
     
-    # Try regular DNS first
-    try:
-        print("Production: Trying regular DNS for token exchange...")
-        response = requests.post(
-            "https://accounts.spotify.com/api/token",
-            data=token_data,
-            headers={'Content-Type': 'application/x-www-form-urlencoded'},
-            timeout=(2, 3)
-        )
-        
-        if response.status_code == 200:
-            token_info = response.json()
-            token_info['expires_at'] = int(time.time()) + token_info.get('expires_in', 3600)
-            print("Successfully exchanged token via regular DNS")
-            return token_info
-            
-    except Exception as e:
-        print(f"Regular DNS failed: {e}, trying IP fallback...")
-    
-    # Fallback: Manual IP approach
+    # Manual IP approach first for production
     ip_addresses = ["35.186.224.24", "104.154.127.126", "34.102.136.180"]
     
     for ip in ip_addresses:
         try:
+            print(f"Trying token exchange with IP: {ip}")
             url = f"https://{ip}/api/token"
             headers = {
                 'Host': 'accounts.spotify.com',
@@ -99,7 +81,27 @@ def exchange_token(auth_code):
                 return token_info
                 
         except Exception as e:
+            print(f"IP {ip} failed: {e}")
             continue
+    
+    # Last resort: try regular DNS
+    try:
+        print("All IPs failed, trying regular DNS for token exchange...")
+        response = requests.post(
+            "https://accounts.spotify.com/api/token",
+            data=token_data,
+            headers={'Content-Type': 'application/x-www-form-urlencoded'},
+            timeout=(2, 3)
+        )
+        
+        if response.status_code == 200:
+            token_info = response.json()
+            token_info['expires_at'] = int(time.time()) + token_info.get('expires_in', 3600)
+            print("Successfully exchanged token via regular DNS")
+            return token_info
+            
+    except Exception as e:
+        print(f"Regular DNS also failed: {e}")
     
     print("All token exchange methods failed")
     return None
@@ -203,36 +205,13 @@ def fetch_playlists(access_token, fast_timeout=False):
         except Exception as e:
             print(f"Regular API failed: {e}, falling back to manual IP")
     
-    # Production: Try regular DNS first, then IP fallback
-    timeout_config = (1, 2) if fast_timeout else (2, 3)
-    
-    # Try regular DNS first (often works and is fastest)
-    try:
-        print("Production: Trying regular DNS first...")
-        response = requests.get(
-            "https://api.spotify.com/v1/me/playlists?limit=15&offset=0",
-            headers={
-                'Authorization': f'Bearer {access_token}',
-                'Content-Type': 'application/json'
-            },
-            timeout=timeout_config
-        )
-        
-        if response.status_code == 200:
-            data = response.json()
-            print(f"Successfully fetched {len(data.get('items', []))} playlists via regular DNS")
-            return data
-        elif response.status_code == 401:
-            print("Authentication failed - token may be expired")
-            return None
-            
-    except Exception as e:
-        print(f"Regular DNS failed: {e}, trying IP fallback...")
-    
-    # Fallback: Manual IP approach for Heroku DNS issues
+    # Production: Use manual IP approach with optimized timeouts
     ip_addresses = ["35.186.224.24", "104.154.127.126", "34.102.136.180"]
     
-    print(f"Using manual IP fallback with {len(ip_addresses)} IPs")
+    # Faster timeouts for production
+    timeout_config = (1, 2) if fast_timeout else (2, 3)
+    
+    print(f"Production: Using manual IP approach with {len(ip_addresses)} IPs (timeout: {timeout_config})")
     
     for i, ip in enumerate(ip_addresses):
         try:
@@ -267,6 +246,26 @@ def fetch_playlists(access_token, fast_timeout=False):
             print(f"Error with IP {ip}: {str(e)}")
             continue
     
+    # Last resort: try regular DNS (might work sometimes)
+    try:
+        print("All IPs failed, trying regular DNS as last resort...")
+        response = requests.get(
+            "https://api.spotify.com/v1/me/playlists?limit=15&offset=0",
+            headers={
+                'Authorization': f'Bearer {access_token}',
+                'Content-Type': 'application/json'
+            },
+            timeout=(1, 2)
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            print(f"Success with regular DNS: {len(data.get('items', []))} playlists")
+            return data
+            
+    except Exception as e:
+        print(f"Regular DNS also failed: {e}")
+    
     print("All methods failed for playlists fetch")
     return None
 
@@ -290,38 +289,9 @@ def fetch_playlist_tracks(access_token, playlist_id, limit=50, offset=0):
         except Exception as e:
             print(f"Regular API failed: {e}, falling back to manual IP")
     
-    # Production: Try regular DNS first, then IP fallback
+    # Production: Use manual IP approach with optimized timeouts
     print(f"Fetching tracks for playlist {playlist_id}")
     
-    # Try regular DNS first (often works and is fastest)
-    try:
-        print("Production: Trying regular DNS for tracks...")
-        url = f"https://api.spotify.com/v1/playlists/{playlist_id}/tracks?limit={limit}&offset={offset}&fields=items(track(id,name,artists(name),album(name,images),uri,duration_ms)),total,offset,limit"
-        
-        response = requests.get(
-            url,
-            headers={
-                'Authorization': f'Bearer {access_token}',
-                'Content-Type': 'application/json'
-            },
-            timeout=(2, 3)
-        )
-        
-        if response.status_code == 200:
-            data = response.json()
-            print(f"Successfully fetched {len(data.get('items', []))} tracks via regular DNS")
-            return data
-        elif response.status_code == 401:
-            print("Authentication failed - token may be expired")
-            return None
-        elif response.status_code == 404:
-            print("Playlist not found - may be private or deleted")
-            return None
-            
-    except Exception as e:
-        print(f"Regular DNS failed: {e}, trying IP fallback...")
-    
-    # Fallback: Manual IP approach for Heroku DNS issues
     ip_addresses = ["35.186.224.24", "104.154.127.126", "34.102.136.180"]
     
     for i, ip in enumerate(ip_addresses):
@@ -358,6 +328,31 @@ def fetch_playlist_tracks(access_token, playlist_id, limit=50, offset=0):
         except Exception as e:
             print(f"Error with IP {ip}: {e}")
             continue
+    
+    # Last resort: try regular DNS
+    try:
+        print("All IPs failed, trying regular DNS as last resort...")
+        url = f"https://api.spotify.com/v1/playlists/{playlist_id}/tracks?limit={limit}&offset={offset}&fields=items(track(id,name,artists(name),album(name,images),uri,duration_ms)),total,offset,limit"
+        
+        response = requests.get(
+            url,
+            headers={
+                'Authorization': f'Bearer {access_token}',
+                'Content-Type': 'application/json'
+            },
+            timeout=(1, 2)
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            print(f"Success with regular DNS: {len(data.get('items', []))} tracks")
+            return data
+            
+    except Exception as e:
+        print(f"Regular DNS also failed: {e}")
+    
+    print("All methods failed for tracks fetch")
+    return None
     
     # Fallback: try with regular DNS/hostname as last resort
     try:
