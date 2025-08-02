@@ -268,14 +268,23 @@ def callback():
 @app.route("/playlists")
 @cache.cached(timeout=300, key_prefix='playlists')  # Cache for 5 minutes
 def playlists():
-    sp = get_spotify_client()
-    if not sp:
-        print("No Spotify client available - redirecting to login")
+    token_info = session.get("spotify_token")
+    if not token_info:
+        print("No Spotify token in session - redirecting to login")
+        return jsonify({"error": "Not authenticated", "redirect": "/login"}), 401
+    
+    access_token = token_info.get("access_token")
+    if not access_token:
+        print("No access token available - redirecting to login")
         return jsonify({"error": "Not authenticated", "redirect": "/login"}), 401
     
     try:
-        # Fetch playlists with pagination and limit to improve performance
-        data = sp.current_user_playlists(limit=50, offset=0)
+        # Use manual IP-based fetch to avoid DNS timeouts
+        data = manual_playlists_fetch(access_token)
+        
+        if not data:
+            print("Manual playlists fetch failed - likely network issue")
+            return jsonify({"error": "Failed to fetch playlists"}), 500
         
         # Return only essential data to reduce response size
         simplified_playlists = {
@@ -294,11 +303,6 @@ def playlists():
         }
         
         return jsonify(simplified_playlists)
-    except spotipy.exceptions.SpotifyException as e:
-        print(f"Spotify API error fetching playlists: {e}")
-        if e.http_status == 401:
-            return jsonify({"error": "Authentication expired", "redirect": "/login"}), 401
-        return jsonify({"error": f"Spotify API error: {str(e)}"}), 500
     except Exception as e:
         print(f"Error fetching playlists: {e}")
         return jsonify({"error": "Failed to fetch playlists"}), 500
@@ -1474,6 +1478,78 @@ def manual_token_refresh(refresh_token):
     return None
 
 
+# Manual user profile fetch fallback for Heroku DNS issues
+def manual_user_profile_fetch(access_token):
+    """Manual user profile fetch using hardcoded Spotify IPs as DNS fallback"""
+    
+    # Spotify API IP addresses (multiple for redundancy)
+    ip_addresses = ["35.186.224.24", "104.154.127.126", "34.102.136.180"]
+    
+    # Try each IP directly - bypass DNS completely
+    for ip in ip_addresses:
+        try:
+            # Get user profile directly from IP, use Host header for TLS
+            url = f"https://{ip}/v1/me"
+            headers = {
+                'Host': 'api.spotify.com',
+                'Authorization': f'Bearer {access_token}',
+                'Content-Type': 'application/json'
+            }
+            
+            req_session = requests.Session()
+            
+            response = req_session.get(
+                url,
+                headers=headers,
+                timeout=(3, 3),
+                verify=False  # Skip SSL verification since we're using IP
+            )
+            
+            if response.status_code == 200:
+                return response.json()
+                
+        except Exception as e:
+            continue
+    
+    return None
+
+
+# Manual playlists fetch fallback for Heroku DNS issues
+def manual_playlists_fetch(access_token):
+    """Manual playlists fetch using hardcoded Spotify IPs as DNS fallback"""
+    
+    # Spotify API IP addresses (multiple for redundancy)
+    ip_addresses = ["35.186.224.24", "104.154.127.126", "34.102.136.180"]
+    
+    # Try each IP directly - bypass DNS completely
+    for ip in ip_addresses:
+        try:
+            # Get user playlists directly from IP, use Host header for TLS
+            url = f"https://{ip}/v1/me/playlists?limit=50&offset=0"
+            headers = {
+                'Host': 'api.spotify.com',
+                'Authorization': f'Bearer {access_token}',
+                'Content-Type': 'application/json'
+            }
+            
+            req_session = requests.Session()
+            
+            response = req_session.get(
+                url,
+                headers=headers,
+                timeout=(3, 3),
+                verify=False  # Skip SSL verification since we're using IP
+            )
+            
+            if response.status_code == 200:
+                return response.json()
+                
+        except Exception as e:
+            continue
+    
+    return None
+
+
 # Helper function to create Spotipy client from session
 def get_spotify_client():
     """Get a Spotipy client using the token from session"""
@@ -1510,28 +1586,33 @@ def fetch_user_profile():
         return jsonify({"error": "Not authenticated"}), 401
     
     try:
-        # Try to get user profile using Spotipy (fallback method)
-        sp = get_spotify_client()
-        if sp:
-            user_profile = sp.current_user()
+        # Use IP-based approach to fetch user profile, avoiding DNS timeouts
+        token_info = session.get("spotify_token")
+        access_token = token_info.get("access_token")
+        
+        if not access_token:
+            return jsonify({"error": "No access token"}), 401
+        
+        # Try to get user profile using direct IP requests to avoid DNS issues
+        user_profile = manual_user_profile_fetch(access_token)
+        
+        if user_profile:
+            # Update session with real user info
+            session["user_id"] = user_profile.get("id", session.get("user_id"))
+            session["display_name"] = user_profile.get("display_name") or user_profile.get("id", "Spotify User")
             
-            if user_profile:
-                # Update session with real user info
-                session["user_id"] = user_profile.get("id", session.get("user_id"))
-                session["display_name"] = user_profile.get("display_name") or user_profile.get("id", "Spotify User")
-                
-                # Update host file if user is host
-                if session.get("role") == "host":
-                    host_file = 'current_host.txt'
-                    if os.path.exists(host_file):
-                        with open(host_file, 'w') as f:
-                            f.write(f"{session['user_id']}|{session['display_name']}")
-                
-                return jsonify({
-                    "success": True,
-                    "user_id": session["user_id"],
-                    "display_name": session["display_name"]
-                })
+            # Update host file if user is host
+            if session.get("role") == "host":
+                host_file = 'current_host.txt'
+                if os.path.exists(host_file):
+                    with open(host_file, 'w') as f:
+                        f.write(f"{session['user_id']}|{session['display_name']}")
+            
+            return jsonify({
+                "success": True,
+                "user_id": session["user_id"],
+                "display_name": session["display_name"]
+            })
         
         return jsonify({"error": "Could not fetch user profile"}), 500
             
