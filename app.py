@@ -371,8 +371,6 @@ def callback():
             session["spotify_token"] = token
             oauth.spotify.token = token
             
-            print("Successfully obtained Spotify access token")
-            
             # Clear callback count on success
             session.pop('callback_count', None)
             
