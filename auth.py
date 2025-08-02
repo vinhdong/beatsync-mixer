@@ -29,6 +29,11 @@ def login():
     """Initiate Spotify OAuth flow"""
     try:
         requested_role = request.args.get('role', 'listener')
+        
+        # Clear session when hosting to ensure fresh start
+        if requested_role == 'host':
+            session.clear()
+        
         session['requested_role'] = requested_role
         
         if requested_role == 'host':
