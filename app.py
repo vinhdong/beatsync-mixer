@@ -189,6 +189,11 @@ def login():
         
         print(f"Login route called with role: {requested_role}, retry: {retry_attempt}")
         
+        # Prevent infinite retry loops
+        if retry_attempt and int(retry_attempt) > 3:
+            print(f"Too many retry attempts ({retry_attempt}), redirecting to error")
+            return redirect("/select-role?error=oauth_failed")
+        
         session['requested_role'] = requested_role
         
         # Get the redirect URI from environment (should be set for Heroku)
@@ -207,6 +212,9 @@ def login():
         
         # Make session permanent to ensure it persists through OAuth flow
         session.permanent = True
+        
+        # Clear any previous callback counts to prevent issues
+        session.pop('callback_count', None)
         
         # If this is a retry attempt, add additional parameters to force a fresh OAuth state
         if retry_attempt and int(retry_attempt) > 0:
@@ -236,6 +244,15 @@ def callback():
     print(f"Session at callback start: {dict(session)}")
     print(f"Request args: {dict(request.args)}")
     
+    # Check if this is a repeated callback from an infinite loop
+    callback_count = session.get('callback_count', 0)
+    if callback_count > 2:
+        print(f"Too many callback attempts ({callback_count}), breaking potential loop")
+        session.pop('callback_count', None)
+        return redirect("/select-role?error=oauth_failed")
+    
+    session['callback_count'] = callback_count + 1
+    
     for attempt in range(max_retries):
         try:
             print(f"OAuth callback attempt {attempt + 1}/{max_retries}")
@@ -246,6 +263,9 @@ def callback():
             oauth.spotify.token = token
             
             print("Successfully obtained Spotify access token")
+            
+            # Clear callback count on success
+            session.pop('callback_count', None)
             
             # Fetch user profile with retry logic
             user_response = None
@@ -324,22 +344,16 @@ def callback():
             error_str = str(e).lower()
             error_type = type(e).__name__
             
-            # Don't retry on CSRF/state errors - these won't be fixed by retrying
+            # Don't retry on CSRF/state errors - redirect to error page instead of creating loop
             if 'mismatchingstateerror' in error_type.lower() or 'state' in error_str:
-                print("State mismatch error detected - this is likely due to session restart")
+                print("State mismatch error detected - breaking potential redirect loop")
                 
-                # Get the role from URL parameter as fallback
-                requested_role = request.args.get('role', 'host')
-                print(f"Attempting to recover with role: {requested_role}")
-                
-                # Clear session and redirect to login with the role parameter preserved
+                # Clear callback count and problematic session data
+                session.pop('callback_count', None)
                 session.clear()
-                session.permanent = True
                 
-                # Add a small delay to allow session to clear
-                time.sleep(0.5)
-                
-                return redirect(f"/login?role={requested_role}&retry=1")
+                # Redirect to error page with helpful message instead of creating redirect loop
+                return redirect("/select-role?error=csrf_error")
             
             # Only retry on connection/timeout errors
             if any(error_keyword in error_str for error_keyword in ['timeout', 'connection', 'newconnectionerror', 'maxretryerror']):
@@ -358,6 +372,7 @@ def callback():
     
     # All retries failed
     print("All OAuth callback attempts failed")
+    session.pop('callback_count', None)
     return redirect("/select-role?error=oauth_failed")
 
 
