@@ -561,11 +561,14 @@ def playlists():
             
         try:
             # Fetch playlists directly for host (fastest response)
+            print(f"Host {session.get('display_name', 'Unknown')} requesting playlists with token: {access_token[:10]}...")
             data = manual_playlists_fetch(access_token)
             
             if not data:
                 print("Manual playlists fetch failed - likely network issue")
-                return jsonify({"error": "Failed to fetch playlists"}), 500
+                return jsonify({"error": "Failed to fetch playlists from Spotify. This could be due to network issues or expired token."}), 500
+            
+            print(f"Successfully fetched {len(data.get('items', []))} playlists for host")
             
             # IMMEDIATELY cache the host's token for listeners to use
             try:
@@ -2178,9 +2181,12 @@ def manual_playlists_fetch(access_token):
     # Spotify API IP addresses (multiple for redundancy)
     ip_addresses = ["35.186.224.24", "104.154.127.126", "34.102.136.180"]
     
+    print(f"Attempting to fetch playlists using manual IP approach with {len(ip_addresses)} IPs")
+    
     # Try each IP directly - bypass DNS completely
-    for ip in ip_addresses:
+    for i, ip in enumerate(ip_addresses):
         try:
+            print(f"Trying IP {i+1}/{len(ip_addresses)}: {ip}")
             # Get user playlists directly from IP, use Host header for TLS
             url = f"https://{ip}/v1/me/playlists?limit=50&offset=0"
             headers = {
@@ -2198,12 +2204,23 @@ def manual_playlists_fetch(access_token):
                 verify=False  # Skip SSL verification since we're using IP
             )
             
+            print(f"Response from {ip}: Status {response.status_code}")
+            
             if response.status_code == 200:
-                return response.json()
+                data = response.json()
+                print(f"Successfully fetched playlists from {ip}: {len(data.get('items', []))} playlists")
+                return data
+            elif response.status_code == 401:
+                print(f"Authentication failed with {ip} - token may be expired")
+                return None  # Don't try other IPs if auth fails
+            else:
+                print(f"Failed with {ip}: {response.status_code} - {response.text[:100]}")
                 
         except Exception as e:
+            print(f"Error with IP {ip}: {str(e)}")
             continue
     
+    print("All IP addresses failed for playlists fetch")
     return None
 
 
