@@ -55,6 +55,32 @@ cache = Cache(app)
 
 # OAuth setup for Spotify with improved timeout and state handling
 oauth = OAuth(app)
+
+# Configure requests session with better timeout and retry handling
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
+def create_spotify_session():
+    session = requests.Session()
+    
+    # Configure retry strategy for network issues
+    retry_strategy = Retry(
+        total=3,
+        backoff_factor=2,
+        status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods=["HEAD", "GET", "PUT", "DELETE", "OPTIONS", "TRACE", "POST"]
+    )
+    
+    adapter = HTTPAdapter(max_retries=retry_strategy)
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+    
+    # Set longer timeouts for Heroku's network issues
+    session.timeout = (30, 60)  # 30s connect, 60s read timeout
+    
+    return session
+
 oauth.register(
     name="spotify",
     client_id=os.getenv("SPOTIFY_CLIENT_ID"),
@@ -63,9 +89,10 @@ oauth.register(
     authorize_url="https://accounts.spotify.com/authorize",
     client_kwargs={
         "scope": "user-read-playback-state user-modify-playback-state streaming playlist-read-private user-read-private user-read-email",
-        "timeout": 45,  # Much longer timeout for Heroku's network issues
-        "retries": 0,   # Disable automatic retries to handle ourselves
+        "timeout": 60,  # Increased timeout for Heroku's network issues
     },
+    # Use custom session with better retry handling
+    session=create_spotify_session(),
     # Additional OAuth settings for better state handling
     server_metadata_url=None,  # Don't auto-discover, use explicit URLs
     authorize_params={'show_dialog': 'false'},  # Don't force re-authorization
@@ -326,9 +353,16 @@ def callback():
         print(f"Looking for state key: {state_key}")
         
         if state_key not in session:
-            # If the state isn't in session, create it to match the callback
-            print(f"State {callback_state} not found in session, creating it")
-            session[state_key] = callback_state
+            # If the state isn't in session, create it with proper structure that Authlib expects
+            print(f"State {callback_state} not found in session, creating it with proper structure")
+            import time
+            import os
+            session[state_key] = {
+                'data': {
+                    'redirect_uri': os.getenv('SPOTIFY_REDIRECT_URI', 'https://beatsync-mixer-5715861af181.herokuapp.com/callback')
+                },
+                'exp': time.time() + 600  # 10 minutes from now
+            }
         else:
             # Check if the state has expired and refresh it
             state_data = session[state_key]
@@ -342,6 +376,17 @@ def callback():
                     session[state_key] = state_data
                 else:
                     print(f"State {callback_state} found in session and not expired")
+            elif isinstance(state_data, str):
+                # Convert old string format to proper dict format
+                print(f"Converting state {callback_state} from string to proper dict format")
+                import time
+                import os
+                session[state_key] = {
+                    'data': {
+                        'redirect_uri': os.getenv('SPOTIFY_REDIRECT_URI', 'https://beatsync-mixer-5715861af181.herokuapp.com/callback')
+                    },
+                    'exp': time.time() + 600
+                }
             else:
                 print(f"State {callback_state} found in session (non-dict format)")
     
@@ -401,8 +446,7 @@ def callback():
                         import os
                         session[state_key] = {
                             'data': {
-                                'redirect_uri': 'https://beatsync-mixer-5715861af181.herokuapp.com/callback',
-                                'url': f'https://accounts.spotify.com/authorize?response_type=code&client_id={os.getenv("SPOTIFY_CLIENT_ID")}&redirect_uri=https://beatsync-mixer-5715861af181.herokuapp.com/callback&scope=user-read-playback-state+user-modify-playback-state+streaming+playlist-read-private+user-read-private+user-read-email&state={callback_state}&show_dialog=false'
+                                'redirect_uri': os.getenv('SPOTIFY_REDIRECT_URI', 'https://beatsync-mixer-5715861af181.herokuapp.com/callback')
                             },
                             'exp': time.time() + 600  # 10 minutes from now
                         }
@@ -1857,10 +1901,10 @@ def remove_from_queue(track_uri):
 # Emergency bypass login for testing (only use during OAuth debugging)
 @app.route("/bypass-login")
 def bypass_login():
-    """Emergency bypass for OAuth issues during testing - TEMPORARILY ENABLED"""
-    # Temporarily allow in production for debugging
-    # if os.getenv('FLASK_ENV') == 'production':
-    #     return redirect("/select-role?error=bypass_disabled")
+    """Emergency bypass for OAuth issues during testing - NOT FOR PRODUCTION"""
+    # Only allow in development
+    if os.getenv('FLASK_ENV') == 'production':
+        return redirect("/select-role?error=bypass_disabled")
     
     requested_role = request.args.get('role', 'host')
     print(f"BYPASS LOGIN: Setting role to {requested_role}")
