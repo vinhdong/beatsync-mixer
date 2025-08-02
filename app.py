@@ -185,6 +185,10 @@ def login():
     try:
         # Store the requested role in session
         requested_role = request.args.get('role', 'listener')
+        retry_attempt = request.args.get('retry', '0')
+        
+        print(f"Login route called with role: {requested_role}, retry: {retry_attempt}")
+        
         session['requested_role'] = requested_role
         
         # Get the redirect URI from environment (should be set for Heroku)
@@ -194,7 +198,25 @@ def login():
             return redirect("/select-role?error=oauth_failed")
         
         print(f"Initiating OAuth flow with redirect URI: {redirect_uri}")
-        return oauth.spotify.authorize_redirect(redirect_uri)
+        print(f"Session before OAuth: {dict(session)}")
+        
+        # Ensure session is properly initialized before OAuth
+        if not session.get('initialized'):
+            session['initialized'] = True
+            session['created_at'] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        
+        # Make session permanent to ensure it persists through OAuth flow
+        session.permanent = True
+        
+        # If this is a retry attempt, add additional parameters to force a fresh OAuth state
+        if retry_attempt and int(retry_attempt) > 0:
+            print(f"Retry attempt #{retry_attempt} - forcing fresh OAuth state")
+            # Add a timestamp parameter to ensure fresh state generation
+            import time
+            fresh_param = f"retry_{int(time.time())}"
+            return oauth.spotify.authorize_redirect(redirect_uri, state=fresh_param)
+        else:
+            return oauth.spotify.authorize_redirect(redirect_uri)
         
     except Exception as e:
         print(f"Login route error: {e}")
@@ -209,6 +231,10 @@ def callback():
     import time
     max_retries = 3
     retry_delay = 2  # seconds
+    
+    print(f"OAuth callback received")
+    print(f"Session at callback start: {dict(session)}")
+    print(f"Request args: {dict(request.args)}")
     
     for attempt in range(max_retries):
         try:
@@ -248,8 +274,9 @@ def callback():
                 user_id = f"user_{int(time.time())}"
                 display_name = "Spotify User"
             
-            # Get the requested role from session
-            requested_role = session.get('requested_role', 'listener')
+            # Get the requested role from session - with fallback to URL parameter
+            requested_role = session.get('requested_role') or request.args.get('role', 'listener')
+            print(f"Requested role: {requested_role}")
             
             # Handle role assignment
             if requested_role == 'host':
@@ -283,6 +310,10 @@ def callback():
             # Clear the requested role from session
             session.pop('requested_role', None)
             
+            # Ensure session is properly saved
+            session.permanent = True
+            
+            print(f"Final session state: {dict(session)}")
             return redirect("/")
             
         except Exception as e:
@@ -295,13 +326,23 @@ def callback():
             
             # Don't retry on CSRF/state errors - these won't be fixed by retrying
             if 'mismatchingstateerror' in error_type.lower() or 'state' in error_str:
-                print("State mismatch error detected - redirecting to retry auth flow")
-                # Clear any problematic session data and redirect to login
-                session.pop('requested_role', None)  # Keep the role request
-                return redirect("/select-role?error=csrf_error")
+                print("State mismatch error detected - this is likely due to session restart")
+                
+                # Get the role from URL parameter as fallback
+                requested_role = request.args.get('role', 'host')
+                print(f"Attempting to recover with role: {requested_role}")
+                
+                # Clear session and redirect to login with the role parameter preserved
+                session.clear()
+                session.permanent = True
+                
+                # Add a small delay to allow session to clear
+                time.sleep(0.5)
+                
+                return redirect(f"/login?role={requested_role}&retry=1")
             
             # Only retry on connection/timeout errors
-            if any(error_type in error_str for error_type in ['timeout', 'connection', 'newconnectionerror', 'maxretryerror']):
+            if any(error_keyword in error_str for error_keyword in ['timeout', 'connection', 'newconnectionerror', 'maxretryerror']):
                 if attempt < max_retries - 1:
                     print(f"Retrying OAuth callback in {retry_delay} seconds...")
                     time.sleep(retry_delay)
@@ -980,10 +1021,18 @@ def select_role():
         error_message = """
         <div style="background: #ffe6e6; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #e74c3c; color: #c0392b;">
             <strong>⚠️ Session Security Error</strong><br>
-            Your session expired during authentication. This is a security feature to protect your account.<br><br>
+            Your session expired during authentication. This commonly happens after restarting the session.<br><br>
             <strong>Please try:</strong><br>
-            1. Click the button below to try again<br>
+            1. Click "Clear Session & Try Again" below<br>
             2. If it keeps failing, clear your browser cookies and try again
+        </div>
+        <div style="text-align: center; margin-bottom: 20px;">
+            <a href="/clear-session-and-login?role=host" style="background-color: #e74c3c; color: white; padding: 12px 24px; text-decoration: none; border-radius: 25px; font-weight: bold; display: inline-block; margin: 5px;">
+                🔄 Clear Session & Try Host Again
+            </a>
+            <a href="/clear-session-and-login?role=listener" style="background-color: #666; color: white; padding: 12px 24px; text-decoration: none; border-radius: 25px; font-weight: bold; display: inline-block; margin: 5px;">
+                🔄 Clear Session & Try Listener
+            </a>
         </div>
         """
     elif error == 'oauth_failed':
@@ -1177,7 +1226,7 @@ def select_role():
                         
                         if (response.ok) {{
                             const data = await response.json();
-                            alert('✅ ' + data.message + '\\n\\nRefreshing page...');
+                            alert('✅ ' + data.message + '\\n\\nSession has been restarted. You can now host or join.\\n\\nNote: If you get a session security error when trying to login, use the "Clear Session & Try Again" buttons.');
                             window.location.reload();
                         }} else {{
                             const error = await response.json();
@@ -1251,6 +1300,22 @@ def reset_session():
     return redirect("/select-role")
 
 
+@app.route("/clear-session-and-login")
+def clear_session_and_login():
+    """Clear session completely and redirect to login with role"""
+    requested_role = request.args.get('role', 'host')
+    print(f"Clearing session completely and redirecting to login with role: {requested_role}")
+    
+    # Clear all session data
+    session.clear()
+    
+    # Add a small delay to ensure session is cleared
+    import time
+    time.sleep(0.1)
+    
+    return redirect(f"/login?role={requested_role}&retry=1")
+
+
 @app.route("/restart-session", methods=["POST"])
 def restart_session():
     """Restart the entire session - clears all session data, host state, queue, votes, and chat"""
@@ -1260,23 +1325,25 @@ def restart_session():
         host_file = 'current_host.txt'
         if os.path.exists(host_file):
             os.remove(host_file)
-        
-        # Clear all user sessions (note: this only clears the current user's session)
-        session.clear()
+            print("Removed host file")
         
         # Clear the queue, votes, and chat
         db = SessionLocal()
         try:
             # Clear all votes
+            vote_count = db.query(Vote).count()
             db.query(Vote).delete()
             
             # Clear all queue items
+            queue_count = db.query(QueueItem).count()
             db.query(QueueItem).delete()
             
             # Clear all chat messages
+            chat_count = db.query(ChatMessage).count()
             db.query(ChatMessage).delete()
             
             db.commit()
+            print(f"Cleared {vote_count} votes, {queue_count} queue items, {chat_count} chat messages")
             
             # Emit events to all connected clients
             socketio.emit('queue_cleared')
@@ -1289,6 +1356,8 @@ def restart_session():
             print(f"Error clearing data during session restart: {e}")
         finally:
             db.close()
+        
+        print("Session restart completed successfully")
         
         return jsonify({
             "status": "success", 
