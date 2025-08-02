@@ -2,6 +2,8 @@ import os
 import datetime
 import requests
 import pylast
+import time
+import traceback
 from dotenv import load_dotenv
 from flask import Flask, jsonify, session, redirect, url_for, send_from_directory, abort, request, request
 from sqlalchemy import create_engine, Column, Integer, String, DateTime
@@ -9,12 +11,29 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 from authlib.integrations.flask_client import OAuth
 from flask_socketio import SocketIO, emit
 from flask_caching import Cache
+from flask_session import Session
+import tempfile
 
 load_dotenv()
 
 # Initialize Flask app with static folder
 app = Flask(__name__, static_folder="frontend", static_url_path="")
 app.config["SECRET_KEY"] = os.getenv("FLASK_SECRET")
+
+# Configure server-side session storage for better persistence
+if os.getenv('FLASK_ENV') == 'production':
+    # In production (Heroku), use filesystem storage in /tmp
+    app.config['SESSION_TYPE'] = 'filesystem'
+    app.config['SESSION_FILE_DIR'] = '/tmp/flask_sessions'
+    app.config['SESSION_FILE_THRESHOLD'] = 100  # Maximum number of sessions
+else:
+    # Local development can use Redis or filesystem
+    app.config['SESSION_TYPE'] = 'filesystem'
+    app.config['SESSION_FILE_DIR'] = tempfile.mkdtemp(prefix='beatsync_sessions_')
+
+app.config['SESSION_PERMANENT'] = True
+app.config['SESSION_USE_SIGNER'] = True
+app.config['SESSION_KEY_PREFIX'] = 'beatsync:'
 
 # Configure session for production with OAuth compatibility
 app.config['SESSION_COOKIE_SECURE'] = True if os.getenv('FLASK_ENV') == 'production' else False
@@ -24,6 +43,9 @@ app.config['PERMANENT_SESSION_LIFETIME'] = datetime.timedelta(hours=24)  # 24 ho
 app.config['SESSION_REFRESH_EACH_REQUEST'] = False  # Don't refresh during OAuth flow to preserve state
 app.config['SESSION_COOKIE_NAME'] = 'beatsync_session'  # Custom session name
 app.config['SESSION_COOKIE_DOMAIN'] = None  # Let Flask handle domain automatically
+
+# Initialize server-side session storage
+Session(app)
 
 # Configure caching
 app.config['CACHE_TYPE'] = 'SimpleCache'  # In-memory cache for development
@@ -41,8 +63,8 @@ oauth.register(
     authorize_url="https://accounts.spotify.com/authorize",
     client_kwargs={
         "scope": "user-read-playback-state user-modify-playback-state streaming playlist-read-private user-read-private user-read-email",
-        "timeout": 30,  # 30 second timeout for requests
-        "retries": 3,   # Retry failed requests up to 3 times
+        "timeout": 15,  # Reduced timeout to fail faster
+        "retries": 2,   # Fewer retries to fail faster
     },
     # Additional OAuth settings for better state handling
     server_metadata_url=None,  # Don't auto-discover, use explicit URLs
@@ -220,7 +242,6 @@ def login():
         if retry_attempt and int(retry_attempt) > 0:
             print(f"Retry attempt #{retry_attempt} - forcing fresh OAuth state")
             # Add a timestamp parameter to ensure fresh state generation
-            import time
             fresh_param = f"retry_{int(time.time())}"
             return oauth.spotify.authorize_redirect(redirect_uri, state=fresh_param)
         else:
@@ -1325,7 +1346,6 @@ def clear_session_and_login():
     session.clear()
     
     # Add a small delay to ensure session is cleared
-    import time
     time.sleep(0.1)
     
     return redirect(f"/login?role={requested_role}&retry=1")
@@ -1336,7 +1356,6 @@ def restart_session():
     """Restart the entire session - clears all session data, host state, queue, votes, and chat"""
     try:
         # Remove host file
-        import os
         host_file = 'current_host.txt'
         if os.path.exists(host_file):
             os.remove(host_file)
@@ -1482,12 +1501,14 @@ def get_next_track():
                     "down_votes": down_votes,
                     "net_score": net_score
                 }
-        if not best_track:
-            # No suitable track found (all have more dislikes than likes)
-            return jsonify({"error": "No playable tracks in queue"}), 404
         
-        return jsonify(best_track)
-        
+        if best_track:
+            return jsonify(best_track)
+        else:
+            return jsonify({"error": "No suitable track found (all tracks have negative votes)"}), 404
+            
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
     finally:
         db.close()
 
@@ -1506,7 +1527,7 @@ def auto_play_next():
             return next_track_response
         
         next_track = next_track_response.get_json()
-        track_uri = next_track["track_uri"];
+        track_uri = next_track["track_uri"]
         
         # Play the track
         token = session.get("spotify_token")
