@@ -1,6 +1,5 @@
 import os
-import datetime
-from datetime import timezone
+from datetime import datetime, timezone
 import requests
 import pylast
 import time
@@ -104,7 +103,7 @@ class QueueItem(Base):
     id = Column(Integer, primary_key=True, index=True)
     track_uri = Column(String, nullable=False)
     track_name = Column(String, nullable=True)  # Store track name for better display
-    timestamp = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc))
+    timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 class Vote(Base):
@@ -113,7 +112,7 @@ class Vote(Base):
     track_uri = Column(String, nullable=False)
     vote_type = Column(String, nullable=False)  # 'up' or 'down'
     user_id = Column(String, nullable=True)  # For future user identification
-    timestamp = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc))
+    timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 class ChatMessage(Base):
@@ -121,7 +120,7 @@ class ChatMessage(Base):
     id = Column(Integer, primary_key=True, index=True)
     user = Column(String, nullable=False)
     message = Column(String, nullable=False)
-    timestamp = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc))
+    timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 # Create tables if they don't exist
@@ -143,7 +142,7 @@ def ensure_session():
         # Initialize session for new users if needed
         if not session.get('initialized'):
             session['initialized'] = True
-            session['created_at'] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            session['created_at'] = datetime.now(timezone.utc).isoformat()
             
         # Handle Socket.IO requests differently
         if request.path.startswith('/socket.io/'):
@@ -152,7 +151,7 @@ def ensure_session():
         # Ensure all users have a role (fallback for lost sessions)
         if not session.get('role') and request.endpoint not in ['health', 'session_info', 'oauth_debug', 'select_role']:
             session['role'] = 'guest'
-            session['user_id'] = f"guest_{datetime.datetime.now().timestamp()}"
+            session['user_id'] = f"guest_{datetime.now().timestamp()}"
             session['display_name'] = 'Guest'
             
     except Exception as e:
@@ -161,7 +160,7 @@ def ensure_session():
         if request.path not in ['/login', '/callback']:
             session.clear()
             session['role'] = 'guest'
-            session['user_id'] = f"guest_{datetime.datetime.now().timestamp()}"
+            session['user_id'] = f"guest_{datetime.now().timestamp()}"
             session['display_name'] = 'Guest'
             session['initialized'] = True
 
@@ -274,7 +273,7 @@ def login():
         # Ensure session is properly initialized before OAuth
         if not session.get('initialized'):
             session['initialized'] = True
-            session['created_at'] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            session['created_at'] = datetime.now(timezone.utc).isoformat()
         
         # Make session permanent to ensure it persists through OAuth flow
         session.permanent = True
