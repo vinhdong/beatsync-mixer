@@ -280,12 +280,27 @@ def callback():
     if callback_state:
         # Find the session key for this state and ensure it matches
         state_key = f'_state_spotify_{callback_state}'
+        print(f"Looking for state key: {state_key}")
+        
         if state_key not in session:
             # If the state isn't in session, create it to match the callback
             print(f"State {callback_state} not found in session, creating it")
             session[state_key] = callback_state
         else:
-            print(f"State {callback_state} found in session")
+            # Check if the state has expired and refresh it
+            state_data = session[state_key]
+            if isinstance(state_data, dict) and 'exp' in state_data:
+                import time
+                current_time = time.time()
+                if current_time > state_data['exp']:
+                    print(f"State {callback_state} has expired ({current_time} > {state_data['exp']}), refreshing")
+                    # Extend the expiration time
+                    state_data['exp'] = current_time + 600  # 10 minutes from now
+                    session[state_key] = state_data
+                else:
+                    print(f"State {callback_state} found in session and not expired")
+            else:
+                print(f"State {callback_state} found in session (non-dict format)")
     
     for attempt in range(max_retries):
         try:
@@ -294,7 +309,21 @@ def callback():
             # Ensure the state is properly set in session for this attempt
             if callback_state:
                 state_key = f'_state_spotify_{callback_state}'
-                session[state_key] = callback_state
+                # Make sure the state key is still valid
+                if state_key in session:
+                    state_data = session[state_key]
+                    if isinstance(state_data, dict) and 'exp' in state_data:
+                        import time
+                        current_time = time.time()
+                        if current_time > state_data['exp']:
+                            # Extend expiration
+                            state_data['exp'] = current_time + 600
+                            session[state_key] = state_data
+                            print(f"Extended state expiration for attempt {attempt + 1}")
+                    print(f"State key {state_key} validated for attempt {attempt + 1}")
+                else:
+                    print(f"State key {state_key} missing, recreating for attempt {attempt + 1}")
+                    session[state_key] = callback_state
             
             # Try to get the access token with timeout handling
             token = oauth.spotify.authorize_access_token()
