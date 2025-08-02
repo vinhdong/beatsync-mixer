@@ -1535,14 +1535,12 @@ def remove_from_queue(track_uri):
 def manual_token_exchange(auth_code):
     """Manual token exchange using hardcoded Spotify IPs as DNS fallback"""
     import requests
-    from urllib3.util.connection import create_connection
-    import socket
     
-    # Spotify's token endpoint IPs (backup for DNS failures)
-    spotify_ips = [
-        "35.186.224.24",  # Previously working IP
-        "104.154.127.126",
-        "34.102.136.180"
+    # Spotify's token endpoint with IP addresses (backup for DNS failures)
+    endpoints = [
+        ("https://35.186.224.24/api/token", "accounts.spotify.com"),  # IP with Host header
+        ("https://104.154.127.126/api/token", "accounts.spotify.com"),
+        ("https://34.102.136.180/api/token", "accounts.spotify.com")
     ]
     
     token_data = {
@@ -1553,55 +1551,38 @@ def manual_token_exchange(auth_code):
         'client_secret': os.getenv("SPOTIFY_CLIENT_SECRET")
     }
     
-    # Try each IP with very short timeouts
-    for ip in spotify_ips:
+    # Try each IP endpoint directly - no DNS required!
+    for url, host_header in endpoints:
         try:
-            print(f">>> MANUAL TOKEN EXCHANGE ATTEMPT WITH IP: {ip} <<<")
+            print(f">>> MANUAL TOKEN EXCHANGE ATTEMPT WITH URL: {url} <<<")
             
-            # Create a custom session that connects directly to IP
-            session = requests.Session()
+            headers = {
+                'Host': host_header,  # Critical for TLS verification
+                'Content-Type': 'application/x-www-form-urlencoded'
+            }
             
-            # Override DNS to point to our IP
-            def patched_create_connection(address, *args, **kwargs):
-                host, port = address
-                if host == 'accounts.spotify.com':
-                    return create_connection((ip, port), *args, **kwargs)
-                return create_connection(address, *args, **kwargs)
+            response = requests.post(
+                url,  # Direct IP URL - bypasses DNS completely!
+                data=token_data,
+                headers=headers,
+                timeout=(5, 5),  # (connect_timeout, read_timeout)
+                verify=True  # SSL verification works with correct Host header
+            )
             
-            # Monkey patch for this request
-            original_create_connection = socket.create_connection
-            socket.create_connection = patched_create_connection
-            
-            try:
-                response = session.post(
-                    'https://accounts.spotify.com/api/token',
-                    data=token_data,
-                    headers={
-                        'Host': 'accounts.spotify.com',  # Critical for TLS
-                        'Content-Type': 'application/x-www-form-urlencoded'
-                    },
-                    timeout=5,  # Short timeout per IP
-                    verify=True  # Keep SSL verification with correct Host header
-                )
+            if response.status_code == 200:
+                token_info = response.json()
+                print(f">>> MANUAL TOKEN EXCHANGE SUCCESS WITH URL: {url} <<<")
                 
-                if response.status_code == 200:
-                    token_info = response.json()
-                    print(f">>> MANUAL TOKEN EXCHANGE SUCCESS WITH IP: {ip} <<<")
-                    
-                    # Add expiry time for Spotipy compatibility
-                    import time
-                    token_info['expires_at'] = int(time.time()) + token_info.get('expires_in', 3600)
-                    
-                    return token_info
-                else:
-                    print(f">>> MANUAL TOKEN EXCHANGE FAILED WITH IP {ip}: HTTP {response.status_code} <<<")
-                    
-            finally:
-                # Restore original connection function
-                socket.create_connection = original_create_connection
+                # Add expiry time for Spotipy compatibility
+                import time
+                token_info['expires_at'] = int(time.time()) + token_info.get('expires_in', 3600)
+                
+                return token_info
+            else:
+                print(f">>> MANUAL TOKEN EXCHANGE FAILED WITH {url}: HTTP {response.status_code} <<<")
                 
         except Exception as e:
-            print(f">>> MANUAL TOKEN EXCHANGE ERROR WITH IP {ip}: {e} <<<")
+            print(f">>> MANUAL TOKEN EXCHANGE ERROR WITH {url}: {e} <<<")
             continue
     
     # If all IPs failed
