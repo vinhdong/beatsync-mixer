@@ -139,9 +139,23 @@ def configure_session_storage(app):
             app.config["SESSION_PERMANENT"] = True
             app.config["SESSION_USE_SIGNER"] = True
             app.config["SESSION_FILE_DIR"] = "/tmp/flask_session"
-            app.config["SESSION_COOKIE_SECURE"] = True
+            app.config["SESSION_COOKIE_SECURE"] = False  # Changed: Allow HTTP for debugging
             app.config["SESSION_COOKIE_HTTPONLY"] = True
             app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+            
+            # Ensure session directory exists and is writable
+            session_dir = "/tmp/flask_session"
+            try:
+                os.makedirs(session_dir, exist_ok=True)
+                # Test write permissions
+                test_file = os.path.join(session_dir, "test_write")
+                with open(test_file, 'w') as f:
+                    f.write("test")
+                os.remove(test_file)
+                print(f"Filesystem session directory ready: {session_dir}")
+            except Exception as dir_error:
+                print(f"Warning: Session directory issue: {dir_error}")
+            
             print("Using filesystem for session storage (production fallback)")
             return False
     else:

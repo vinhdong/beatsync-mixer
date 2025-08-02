@@ -59,7 +59,10 @@ def create_app():
         """Serve front-end application"""
         # Check if user is authenticated - allow guest, host, and listener roles
         user_role = session.get("role")
+        print(f"Main route - Session role: {user_role}, Session keys: {list(session.keys())}")
+        
         if not user_role or user_role not in ['guest', 'host', 'listener']:
+            print(f"No valid role found, redirecting to select-role. Current role: {user_role}")
             return redirect("/select-role")
         
         # Read the HTML file and inject role information

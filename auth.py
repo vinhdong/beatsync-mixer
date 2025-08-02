@@ -152,6 +152,10 @@ def callback():
         # Ensure session is properly saved
         session.permanent = True
         
+        # Debug: Check session state before redirect
+        print(f"Session state before redirect: role={session.get('role')}, user_id={session.get('user_id')}")
+        print(f"Session keys: {list(session.keys())}")
+        
         return redirect("/")
         
     except Exception as e:
