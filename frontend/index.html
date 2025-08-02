@@ -1172,7 +1172,7 @@
     async function initializeSpotifyPlayer() {
       try {
         // Get access token from backend
-        const tokenResponse = await fetch('/spotify-token', {
+        const tokenResponse = await fetch('/playback/spotify-token', {
           credentials: 'include'
         });
         if (!tokenResponse.ok) {
