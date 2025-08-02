@@ -2188,7 +2188,8 @@ def manual_playlists_fetch(access_token):
         try:
             print(f"Trying IP {i+1}/{len(ip_addresses)}: {ip}")
             # Get user playlists directly from IP, use Host header for TLS
-            url = f"https://{ip}/v1/me/playlists?limit=50&offset=0"
+            # Reduced limit from 50 to 15 for faster loading
+            url = f"https://{ip}/v1/me/playlists?limit=15&offset=0"
             headers = {
                 'Host': 'api.spotify.com',
                 'Authorization': f'Bearer {access_token}',
@@ -2231,13 +2232,17 @@ def manual_playlist_tracks_fetch(access_token, playlist_id, limit=50, offset=0):
     # Spotify API IP addresses (multiple for redundancy)
     ip_addresses = ["35.186.224.24", "104.154.127.126", "34.102.136.180"]
     
-    # Try each IP directly - bypass DNS completely
-    for ip in ip_addresses:
+    print(f"Fetching tracks for playlist {playlist_id} with token {access_token[:10]}...")
+    
+    # Try each IP directly - bypass DNS completely with fast failover
+    for i, ip in enumerate(ip_addresses):
         try:
+            print(f"Trying IP {i+1}/{len(ip_addresses)}: {ip}")
+            
             # Get playlist tracks directly from IP, use Host header for TLS
             url = f"https://{ip}/v1/playlists/{playlist_id}/tracks?limit={limit}&offset={offset}&fields=items(track(id,name,artists(name),album(name,images),uri,duration_ms)),total,offset,limit"
             headers = {
-                'Host': 'api.spotify.com',
+                'Host': 'api.spotify.com',  # Correct Host header for API endpoint
                 'Authorization': f'Bearer {access_token}',
                 'Content-Type': 'application/json'
             }
@@ -2247,16 +2252,53 @@ def manual_playlist_tracks_fetch(access_token, playlist_id, limit=50, offset=0):
             response = req_session.get(
                 url,
                 headers=headers,
-                timeout=(5, 5),  # Increased timeout for better reliability
+                timeout=(2, 2),  # Short timeout for fast failover
                 verify=False  # Skip SSL verification since we're using IP
             )
             
+            print(f"Response status: {response.status_code}")
+            
             if response.status_code == 200:
-                return response.json()
+                data = response.json()
+                print(f"Successfully fetched {len(data.get('items', []))} tracks from {ip}")
+                return data
+            elif response.status_code == 401:
+                print(f"Authentication failed (401) - token may be expired")
+                return None
+            elif response.status_code == 404:
+                print(f"Playlist not found (404) - playlist_id may be invalid")
+                return None
                 
         except Exception as e:
+            print(f"Error with IP {ip}: {e}")
             continue
     
+    # Fallback: try with regular DNS/hostname as last resort
+    try:
+        print("Trying fallback with regular DNS...")
+        url = f"https://api.spotify.com/v1/playlists/{playlist_id}/tracks?limit={limit}&offset={offset}&fields=items(track(id,name,artists(name),album(name,images),uri,duration_ms)),total,offset,limit"
+        headers = {
+            'Authorization': f'Bearer {access_token}',
+            'Content-Type': 'application/json'
+        }
+        
+        response = requests.get(url, headers=headers, timeout=(3, 3))
+        
+        if response.status_code == 200:
+            data = response.json()
+            print(f"Successfully fetched {len(data.get('items', []))} tracks via DNS fallback")
+            return data
+        elif response.status_code == 401:
+            print(f"Authentication failed (401) via DNS fallback")
+            return None
+        elif response.status_code == 404:
+            print(f"Playlist not found (404) via DNS fallback")
+            return None
+            
+    except Exception as e:
+        print(f"DNS fallback also failed: {e}")
+    
+    print("All methods failed for playlist tracks fetch")
     return None
 
 
