@@ -1,5 +1,5 @@
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import requests
 import pylast
 import time
@@ -39,7 +39,7 @@ app.config['SESSION_KEY_PREFIX'] = 'beatsync:'
 app.config['SESSION_COOKIE_SECURE'] = True if os.getenv('FLASK_ENV') == 'production' else False
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'  # Allow cross-site requests for OAuth callbacks
-app.config['PERMANENT_SESSION_LIFETIME'] = datetime.timedelta(hours=24)  # 24 hour sessions
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=24)  # 24 hour sessions
 app.config['SESSION_REFRESH_EACH_REQUEST'] = False  # Don't refresh during OAuth flow to preserve state
 app.config['SESSION_COOKIE_NAME'] = 'beatsync_session'  # Custom session name
 app.config['SESSION_COOKIE_DOMAIN'] = None  # Let Flask handle domain automatically
