@@ -1946,7 +1946,49 @@
 
     socket.on("vote_confirmed", data => {
       console.log(`Vote confirmed: ${data.vote_type} on ${data.track_uri}`);
-      // The vote was successfully recorded on the server
+      
+      // Show a subtle confirmation feedback to the user
+      const safeId = data.track_uri.replace(/[^a-zA-Z0-9]/g, '_');
+      const trackElement = document.querySelector(`li[data-track-uri="${data.track_uri}"]`);
+      
+      if (trackElement) {
+        // Add a brief success indicator
+        const confirmation = document.createElement('span');
+        confirmation.style.cssText = `
+          position: absolute;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+          background: rgba(29, 185, 84, 0.9);
+          color: white;
+          padding: 4px 8px;
+          border-radius: 12px;
+          font-size: 11px;
+          font-weight: bold;
+          z-index: 10;
+          pointer-events: none;
+        `;
+        confirmation.textContent = data.vote_type === 'up' ? '👍 Voted!' : '👎 Voted!';
+        
+        trackElement.style.position = 'relative';
+        trackElement.appendChild(confirmation);
+        
+        // Remove the confirmation after 1.5 seconds
+        setTimeout(() => {
+          if (confirmation.parentElement) {
+            confirmation.remove();
+          }
+        }, 1500);
+      }
+      
+      // Update local vote data to ensure consistency
+      if (!voteData[data.track_uri]) {
+        voteData[data.track_uri] = { up: 0, down: 0 };
+      }
+      voteData[data.track_uri] = {
+        up: data.up_votes,
+        down: data.down_votes
+      };
     });
 
     socket.on("chat_message", data => {
@@ -1990,6 +2032,13 @@
       
       console.log(`Voting ${voteType} on track: ${trackUri}`);
       
+      // Store current counts for rollback if needed
+      const safeId = trackUri.replace(/[^a-zA-Z0-9]/g, '_');
+      const upElement = document.getElementById(`up-${safeId}`);
+      const downElement = document.getElementById(`down-${safeId}`);
+      const originalUpCount = parseInt(upElement?.textContent) || 0;
+      const originalDownCount = parseInt(downElement?.textContent) || 0;
+      
       // Send vote to backend
       socket.emit('vote_add', {
         track_uri: trackUri,
@@ -1997,7 +2046,6 @@
       });
       
       // Provide immediate optimistic UI feedback
-      const safeId = trackUri.replace(/[^a-zA-Z0-9]/g, '_');
       const countElement = document.getElementById(`${voteType}-${safeId}`);
       if (countElement) {
         const currentCount = parseInt(countElement.textContent) || 0;
@@ -2006,8 +2054,6 @@
         // Update score immediately
         const scoreElement = document.getElementById(`score-${safeId}`);
         if (scoreElement) {
-          const upElement = document.getElementById(`up-${safeId}`);
-          const downElement = document.getElementById(`down-${safeId}`);
           const upVotes = parseInt(upElement?.textContent) || 0;
           const downVotes = parseInt(downElement?.textContent) || 0;
           const netScore = upVotes - downVotes;
@@ -2026,7 +2072,58 @@
             scoreElement.style.backgroundColor = '#333';
           }
         }
+        
+        // Update local vote data optimistically
+        if (!voteData[trackUri]) {
+          voteData[trackUri] = { up: originalUpCount, down: originalDownCount };
+        }
+        if (voteType === 'up') {
+          voteData[trackUri].up++;
+        } else {
+          voteData[trackUri].down++;
+        }
+        
+        // Reorder queue based on optimistic update
+        reorderQueueByVotes();
       }
+      
+      // Set a timeout to rollback optimistic update if no confirmation is received
+      setTimeout(() => {
+        // Check if we got a confirmation by looking for the success indicator
+        const trackElement = document.querySelector(`li[data-track-uri="${trackUri}"]`);
+        const hasConfirmation = trackElement?.querySelector('span[style*="rgba(29, 185, 84, 0.9)"]');
+        
+        if (!hasConfirmation) {
+          console.log('Vote confirmation not received, rolling back optimistic update');
+          // Rollback the optimistic update
+          if (upElement) upElement.textContent = originalUpCount;
+          if (downElement) downElement.textContent = originalDownCount;
+          
+          // Restore original vote data
+          voteData[trackUri] = { up: originalUpCount, down: originalDownCount };
+          
+          // Update score back to original
+          const scoreElement = document.getElementById(`score-${safeId}`);
+          if (scoreElement) {
+            const netScore = originalUpCount - originalDownCount;
+            scoreElement.textContent = `Score: ${netScore >= 0 ? '+' : ''}${netScore}`;
+            
+            if (netScore > 0) {
+              scoreElement.style.color = '#1db954';
+              scoreElement.style.backgroundColor = 'rgba(29, 185, 84, 0.1)';
+            } else if (netScore < 0) {
+              scoreElement.style.color = '#e74c3c';
+              scoreElement.style.backgroundColor = 'rgba(231, 76, 60, 0.1)';
+            } else {
+              scoreElement.style.color = '#666';
+              scoreElement.style.backgroundColor = '#333';
+            }
+          }
+          
+          // Reorder queue again with corrected data
+          reorderQueueByVotes();
+        }
+      }, 3000); // Give 3 seconds for confirmation
     }
 
     function sendChatMessage(event) {
@@ -2056,8 +2153,46 @@
     // Handle socket errors
     socket.on('error', function(error) {
       console.error('Socket error received:', error);
+      
+      // Show user-friendly error message
       if (error.message) {
-        alert('Error: ' + error.message);
+        // Create a non-intrusive error notification
+        const errorDiv = document.createElement('div');
+        errorDiv.style.cssText = `
+          position: fixed;
+          top: 20px;
+          right: 20px;
+          background: #e74c3c;
+          color: white;
+          padding: 12px 20px;
+          border-radius: 8px;
+          z-index: 1001;
+          max-width: 300px;
+          box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+          font-weight: bold;
+        `;
+        errorDiv.innerHTML = `
+          ⚠️ ${error.message}
+          <button onclick="this.parentElement.remove()" style="float: right; background: none; border: none; color: white; font-size: 16px; cursor: pointer; margin-left: 10px;">×</button>
+        `;
+        document.body.appendChild(errorDiv);
+        
+        // Auto-remove after 8 seconds
+        setTimeout(() => {
+          if (errorDiv.parentElement) {
+            errorDiv.remove();
+          }
+        }, 8000);
+      }
+      
+      // If authentication error, fetch session info for debugging
+      if (error.message && error.message.includes('Authentication')) {
+        fetch('/session-info')
+          .then(response => response.json())
+          .then(sessionData => {
+            console.log('Session data after auth error:', sessionData);
+          })
+          .catch(err => console.error('Failed to fetch session info after error:', err));
       }
     });
 
