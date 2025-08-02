@@ -37,6 +37,10 @@ venv.bak/
 # Cache and temporary files
 .cache/
 .pytest_cache/
+test_*.py
+demo.py
+cookies.txt
+current_host.txt
 
 # IDEs
 .vscode/
