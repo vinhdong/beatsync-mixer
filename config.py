@@ -40,7 +40,7 @@ def create_manual_redis_client():
         from urllib.parse import urlparse
         parsed = urlparse(redis_url)
         
-        # Try direct connection first
+        # Try direct connection with very short timeouts
         client = redis.Redis(
             host=parsed.hostname,
             port=parsed.port or 6379,
@@ -48,11 +48,12 @@ def create_manual_redis_client():
             ssl=True if parsed.scheme == 'rediss' else False,
             ssl_cert_reqs=None if parsed.scheme == 'rediss' else None,
             decode_responses=True,
-            socket_connect_timeout=5,
-            socket_timeout=5
+            socket_connect_timeout=3,  # Reduced from 5 to fail faster
+            socket_timeout=3,          # Reduced from 5 to fail faster
+            retry_on_timeout=False     # Don't retry on timeout
         )
         
-        # Test connection
+        # Test connection with timeout
         client.ping()
         print(f"Manual Redis client connected successfully to {parsed.hostname}:{parsed.port}")
         return client
@@ -79,8 +80,8 @@ class ManualRedisCache:
         if self.use_manual:
             try:
                 return self.manual_client.get(key)
-            except:
-                print(f"Manual Redis get failed for key: {key}, falling back to Flask-Caching")
+            except Exception as e:
+                print(f"Manual Redis get failed for key: {key} - {e}, falling back to Flask-Caching")
                 return self.flask_cache.get(key)
         else:
             return self.flask_cache.get(key)
@@ -93,7 +94,7 @@ class ManualRedisCache:
                 else:
                     return self.manual_client.set(key, value)
             except Exception as e:
-                print(f"Manual Redis set failed for key: {key}, falling back to Flask-Caching: {e}")
+                print(f"Manual Redis set failed for key: {key} - {e}, falling back to Flask-Caching")
                 return self.flask_cache.set(key, value, timeout=timeout)
         else:
             return self.flask_cache.set(key, value, timeout=timeout)
@@ -102,11 +103,55 @@ class ManualRedisCache:
         if self.use_manual:
             try:
                 return self.manual_client.delete(key)
-            except:
-                print(f"Manual Redis delete failed for key: {key}, falling back to Flask-Caching")
+            except Exception as e:
+                print(f"Manual Redis delete failed for key: {key} - {e}, falling back to Flask-Caching")
                 return self.flask_cache.delete(key)
         else:
             return self.flask_cache.delete(key)
+
+
+def configure_session_storage(app):
+    """Configure session storage with fallback for Redis failures"""
+    
+    if os.getenv("FLASK_ENV") == "production":
+        # Try to use Redis for sessions in production
+        try:
+            # First try to create a manual Redis client for sessions
+            manual_redis = create_manual_redis_client()
+            if manual_redis:
+                app.config["SESSION_TYPE"] = "redis"
+                app.config["SESSION_REDIS"] = manual_redis
+                app.config["SESSION_PERMANENT"] = True
+                app.config["SESSION_USE_SIGNER"] = True
+                app.config["SESSION_KEY_PREFIX"] = "beatsync:"
+                app.config["SESSION_COOKIE_SECURE"] = True
+                app.config["SESSION_COOKIE_HTTPONLY"] = True
+                app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+                print("Using manual Redis client for session storage (production)")
+                return True
+            else:
+                raise Exception("Manual Redis client creation failed")
+                
+        except Exception as e:
+            print(f"Redis session storage failed ({e}), falling back to filesystem")
+            # Fall back to filesystem sessions even in production
+            app.config["SESSION_TYPE"] = "filesystem"
+            app.config["SESSION_PERMANENT"] = True
+            app.config["SESSION_USE_SIGNER"] = True
+            app.config["SESSION_FILE_DIR"] = "/tmp/flask_session"
+            app.config["SESSION_COOKIE_SECURE"] = True
+            app.config["SESSION_COOKIE_HTTPONLY"] = True
+            app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+            print("Using filesystem for session storage (production fallback)")
+            return False
+    else:
+        # Development: Use filesystem for session storage
+        app.config["SESSION_TYPE"] = "filesystem"
+        app.config["SESSION_PERMANENT"] = True
+        app.config["SESSION_USE_SIGNER"] = True
+        app.config["SESSION_FILE_DIR"] = "/tmp/flask_session"
+        print("Using filesystem for session storage (development)")
+        return False
 
 
 def init_app(app):
@@ -115,47 +160,28 @@ def init_app(app):
     # Basic Flask configuration
     app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
     
-    # Configure server-side session storage
-    if os.getenv("FLASK_ENV") == "production":
-        # Production: Use Redis for session storage (recommended for multi-dyno Heroku apps)
-        app.config["SESSION_TYPE"] = "redis"
-        app.config["SESSION_REDIS"] = redis.from_url(
-            get_redis_url(),
-            ssl_cert_reqs=ssl.CERT_NONE if get_redis_url().startswith("rediss://") else None
-        )
-        app.config["SESSION_PERMANENT"] = True
-        app.config["SESSION_USE_SIGNER"] = True
-        app.config["SESSION_KEY_PREFIX"] = "beatsync:"
-        app.config["SESSION_COOKIE_SECURE"] = True
-        app.config["SESSION_COOKIE_HTTPONLY"] = True
-        app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
-        print("Using Redis for session storage (production)")
-    else:
-        # Development: Use filesystem for session storage (simpler for local dev)
-        app.config["SESSION_TYPE"] = "filesystem"
-        app.config["SESSION_PERMANENT"] = True
-        app.config["SESSION_USE_SIGNER"] = True
-        app.config["SESSION_FILE_DIR"] = "/tmp/flask_session"
-        print("Using filesystem for session storage (development)")
+    # Configure session storage with fallback
+    configure_session_storage(app)
     
     # Initialize Flask-Session
     Session(app)
     
-    # Configure Flask-Caching
+    # Configure Flask-Caching with robust fallback
     try:
-        # Try Redis first
-        redis_url = get_redis_url()
-        test_client = redis.from_url(redis_url)
-        test_client.ping()
-        
-        app.config["CACHE_TYPE"] = "redis"
-        app.config["CACHE_REDIS_URL"] = redis_url
-        app.config["CACHE_DEFAULT_TIMEOUT"] = 300
-        print("Using Redis for caching")
-        
+        # Try manual Redis client first (bypasses DNS issues)
+        manual_redis = create_manual_redis_client()
+        if manual_redis:
+            # Use manual Redis client for caching
+            app.config["CACHE_TYPE"] = "redis"
+            app.config["CACHE_REDIS_URL"] = get_redis_url()
+            app.config["CACHE_DEFAULT_TIMEOUT"] = 300
+            print("Manual Redis client available for caching")
+        else:
+            raise Exception("Manual Redis client not available")
+            
     except Exception as e:
-        # Fall back to simple memory cache for local development
-        print(f"Redis not available ({e}), using simple memory cache")
+        # Fall back to simple memory cache
+        print(f"Redis not available for caching ({e}), using simple memory cache")
         app.config["CACHE_TYPE"] = "simple"
         app.config["CACHE_DEFAULT_TIMEOUT"] = 300
     
