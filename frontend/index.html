@@ -1083,6 +1083,7 @@
       
       // Show notification for listeners
       if (window.userRole === 'listener') {
+        const trackName = data.track_name || 'Unknown Track';
         const notification = document.createElement('div');
         notification.style.cssText = `
           position: fixed;
@@ -1094,15 +1095,16 @@
           border-radius: 8px;
           z-index: 1000;
           font-weight: bold;
+          max-width: 300px;
         `;
-        notification.textContent = '🎵 Host started playing music';
+        notification.textContent = `🎵 Now Playing: ${trackName}`;
         document.body.appendChild(notification);
         
         setTimeout(() => {
           if (notification.parentNode) {
             notification.parentNode.removeChild(notification);
           }
-        }, 3000);
+        }, 5000);
       }
     });
 
@@ -1643,6 +1645,17 @@
         return;
       }
 
+      // Find the track name from the queue
+      const trackElement = document.querySelector(`li[data-track-uri="${trackUri}"]`);
+      let trackName = trackUri.split(':').pop(); // fallback
+      
+      if (trackElement) {
+        const trackNameSpan = trackElement.querySelector('span:first-child');
+        if (trackNameSpan) {
+          trackName = trackNameSpan.textContent.trim();
+        }
+      }
+
       try {
         const response = await fetch('/playback/play', {
           method: 'POST',
@@ -1652,6 +1665,7 @@
           },
           body: JSON.stringify({ 
             track_uri: trackUri,
+            track_name: trackName,
             device_id: deviceId 
           })
         });

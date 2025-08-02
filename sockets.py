@@ -5,7 +5,7 @@ Handles real-time communication for queue, voting, and chat.
 
 from flask import session, request
 from flask_socketio import SocketIO, emit
-from db import get_db, QueueItem, Vote, ChatMessage
+from db import get_db, QueueItem, Vote, ChatMessage, CurrentlyPlaying
 
 
 # SocketIO instance will be imported from app factory
@@ -251,8 +251,37 @@ def send_initial_data_async(client_sid):
     """Send initial data asynchronously to avoid blocking the connection"""
     try:
         with get_db() as db:
-            # Send queue items with vote counts
-            items = db.query(QueueItem).order_by(QueueItem.timestamp).limit(20).all()
+            # Send currently playing track first if exists
+            currently_playing = db.query(CurrentlyPlaying).first()
+            if currently_playing:
+                print(f"Sending currently playing track to {client_sid}: {currently_playing.track_name}")
+                if currently_playing.is_playing == "true":
+                    socketio.emit(
+                        "playback_started",
+                        {
+                            "track_uri": currently_playing.track_uri,
+                            "track_name": currently_playing.track_name,
+                            "device_id": currently_playing.device_id,
+                            "is_playing": True
+                        },
+                        room=client_sid
+                    )
+                else:
+                    socketio.emit(
+                        "playback_paused",
+                        {
+                            "track_uri": currently_playing.track_uri,
+                            "track_name": currently_playing.track_name,
+                            "device_id": currently_playing.device_id,
+                            "is_playing": False
+                        },
+                        room=client_sid
+                    )
+            
+            # Send queue items with vote counts (all items, not just 20)
+            items = db.query(QueueItem).order_by(QueueItem.timestamp).all()
+            print(f"Sending {len(items)} queue items to {client_sid}")
+            
             for item in items:
                 # Get vote counts for this track
                 up_votes = (

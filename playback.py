@@ -5,6 +5,7 @@ Handles Spotify playback, device management, and status.
 
 from flask import Blueprint, session, request, jsonify, abort
 from spotify_api import start_playback, pause_playback, get_devices, get_playback_state
+from db import get_db, CurrentlyPlaying
 
 
 playback_bp = Blueprint('playback', __name__)
@@ -58,11 +59,33 @@ def play_track():
         success = start_playback(access_token, device_id, uris)
         
         if success:
+            # Store currently playing track in database
+            try:
+                with get_db() as db:
+                    # Clear any existing currently playing track
+                    db.query(CurrentlyPlaying).delete()
+                    
+                    # Add new currently playing track
+                    if track_uri:
+                        # Get track name from the queue or use a simplified name
+                        track_name = data.get("track_name", track_uri.split(":")[-1])
+                        currently_playing = CurrentlyPlaying(
+                            track_uri=track_uri,
+                            track_name=track_name,
+                            is_playing="true",
+                            device_id=device_id
+                        )
+                        db.add(currently_playing)
+                        print(f"Stored currently playing track: {track_name} ({track_uri})")
+            except Exception as db_error:
+                print(f"Error storing currently playing track: {db_error}")
+            
             # Broadcast playback state to all connected clients
             from flask import current_app
             if hasattr(current_app, 'socketio'):
                 current_app.socketio.emit('playback_started', {
                     'track_uri': track_uri,
+                    'track_name': data.get("track_name", track_uri.split(":")[-1]),
                     'device_id': device_id,
                     'is_playing': True
                 })
@@ -98,6 +121,18 @@ def pause_track():
         success = pause_playback(access_token, device_id)
         
         if success:
+            # Update currently playing track in database to paused
+            try:
+                with get_db() as db:
+                    currently_playing = db.query(CurrentlyPlaying).first()
+                    if currently_playing:
+                        currently_playing.is_playing = "false"
+                        print(f"Updated currently playing track to paused: {currently_playing.track_name}")
+                    else:
+                        print("No currently playing track found to pause")
+            except Exception as db_error:
+                print(f"Error updating currently playing track: {db_error}")
+            
             # Broadcast pause state to all connected clients
             from flask import current_app
             if hasattr(current_app, 'socketio'):
