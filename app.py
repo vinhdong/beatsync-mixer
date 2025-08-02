@@ -196,9 +196,10 @@ in_memory_cache = {
 
 def get_in_memory_cache(key):
     """Get from in-memory cache if fresh"""
-    if key in in_memory_cache and in_memory_cache[f'{key}_timestamp']:
+    if key in in_memory_cache and in_memory_cache.get(f'{key}_timestamp'):
         age = time.time() - in_memory_cache[f'{key}_timestamp']
         if age < in_memory_cache['cache_ttl']:
+            print(f"Serving {key} from in-memory cache (age: {age:.1f}s)")
             return in_memory_cache[key]
     return None
 
@@ -206,16 +207,50 @@ def set_in_memory_cache(key, value):
     """Set in-memory cache with timestamp"""
     in_memory_cache[key] = value
     in_memory_cache[f'{key}_timestamp'] = time.time()
+    print(f"Updated in-memory cache for {key}")
 
 def clear_in_memory_cache(key=None):
     """Clear specific key or all in-memory cache"""
     if key:
         in_memory_cache[key] = None
         in_memory_cache[f'{key}_timestamp'] = None
+        print(f"Cleared in-memory cache for {key}")
     else:
         for k in list(in_memory_cache.keys()):
             if not k.endswith('_ttl'):
                 in_memory_cache[k] = None
+        print("Cleared all in-memory cache")
+
+def get_cached_playlists():
+    """Get playlists from in-memory cache first, then Redis if needed"""
+    # Try in-memory cache first (fastest)
+    cached_data = get_in_memory_cache("host_playlists")
+    if cached_data:
+        return cached_data
+    
+    # Try Redis cache
+    try:
+        cached_data = cache.get("host_playlists_simplified")
+        if cached_data:
+            print("Serving playlists from Redis cache")
+            # Update in-memory cache to avoid Redis on next request
+            set_in_memory_cache("host_playlists", cached_data)
+            return cached_data
+    except Exception as e:
+        print(f"Redis cache read failed: {e}")
+    
+    print("No cached playlists available")
+    return None
+
+def invalidate_playlist_cache():
+    """Clear both in-memory and Redis playlist cache"""
+    clear_in_memory_cache("host_playlists")
+    try:
+        cache.delete("host_playlists_simplified")
+        cache.delete("host_access_token")
+        print("Cleared Redis playlist cache")
+    except Exception as e:
+        print(f"Error clearing Redis cache: {e}")
 
 def simplify_playlists_data(playlists_data):
     """Convert full Spotify JSON to minimal cached format"""
@@ -495,47 +530,37 @@ def callback():
                 f.write(f"{user_id}|{display_name}")
             
             # Start asynchronous playlist caching - DON'T BLOCK LOGIN
-            def cache_playlists_async():
+            def cache_playlists_background():
                 """Cache playlists in background thread to avoid blocking login"""
                 try:
                     print(f"Background: Pre-caching playlists for new host: {display_name}")
                     playlists_data = manual_playlists_fetch(access_token)
                     if playlists_data:
-                        # Cache simplified playlists (much smaller payload)
-                        simplified_playlists = {
-                            "items": [
-                                {
-                                    "id": playlist["id"],
-                                    "name": playlist["name"],
-                                    "description": playlist.get("description", ""),
-                                    "tracks": {"total": playlist["tracks"]["total"]},
-                                    "images": playlist.get("images", [])[:1],
-                                    "owner": {"display_name": playlist["owner"]["display_name"]}
-                                }
-                                for playlist in playlists_data.get("items", [])
-                            ],
-                            "total": playlists_data.get("total", 0),
-                            "host_name": display_name,
-                            "cached_at": time.time()
-                        }
-                        
-                        cache.set("host_playlists_simplified", simplified_playlists, timeout=1800)
-                        cache.set("host_access_token", access_token, timeout=1800)
-                        print(f"Background: Successfully cached {len(simplified_playlists['items'])} simplified playlists")
-                        
-                        # Notify listeners asynchronously
-                        socketio.emit('playlists_available', {
-                            'host_name': display_name,
-                            'playlist_count': len(simplified_playlists['items'])
-                        })
-                        print("Background: Notified listeners that playlists are available")
+                        # Create simplified playlists using our helper function
+                        simplified_playlists = simplify_playlists_data(playlists_data)
+                        if simplified_playlists:
+                            # Add host metadata
+                            simplified_playlists["host_name"] = display_name
+                            simplified_playlists["cached_at"] = time.time()
+                            
+                            # Cache using our optimized async function
+                            cache_playlists_async(access_token, simplified_playlists)
+                            
+                            # Notify listeners asynchronously
+                            socketio.emit('playlists_available', {
+                                'host_name': display_name,
+                                'playlist_count': len(simplified_playlists['items'])
+                            })
+                            print("Background: Notified listeners that playlists are available")
+                        else:
+                            print("Background: Failed to simplify playlists data")
                     else:
-                        print("Background: Failed to fetch playlists")
+                        print("Background: Failed to fetch playlists from Spotify")
                 except Exception as e:
                     print(f"Background: Error caching playlists: {e}")
             
             # Start background caching - login continues immediately
-            threading.Thread(target=cache_playlists_async, daemon=True).start()
+            threading.Thread(target=cache_playlists_background, daemon=True).start()
             print(f"Started background playlist caching for {display_name}")
             
         else:
@@ -600,27 +625,22 @@ def playlists():
             }
             
             # Cache asynchronously - don't block the response
-            def cache_playlists_async():
+            def cache_playlists_background():
                 try:
                     # Add metadata for listeners
                     cached_playlists = simplified_playlists.copy()
                     cached_playlists["host_name"] = session.get("display_name", "Host")
                     cached_playlists["cached_at"] = time.time()
                     
-                    # Update both Redis and in-memory cache
-                    cache.set("host_playlists_simplified", cached_playlists, timeout=1800)
-                    cache.set("host_access_token", access_token, timeout=1800)
-                    
-                    # Update in-memory cache
-                    in_memory_cache["host_playlists"] = cached_playlists
-                    in_memory_cache["cached_at"] = time.time()
+                    # Use our optimized caching function
+                    cache_playlists_async(access_token, cached_playlists)
                     
                     print(f"Background: Cached {len(simplified_playlists['items'])} playlists for listeners")
                 except Exception as e:
                     print(f"Background: Cache update failed: {e}")
             
             # Start background caching
-            threading.Thread(target=cache_playlists_async, daemon=True).start()
+            threading.Thread(target=cache_playlists_background, daemon=True).start()
             
             # Return immediately to host
             return jsonify(simplified_playlists)
