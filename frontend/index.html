@@ -898,9 +898,9 @@
             </a>
           </div>
           <div class="role-option">
-            <a href="/login?role=listener" class="role-btn listener-btn">
+            <a href="/join-listener" class="role-btn listener-btn">
               🎧 Join as Listener
-              <small>Vote on music, chat with others</small>
+              <small>No Spotify account required - join instantly!</small>
             </a>
           </div>
           <div class="role-option">
@@ -1034,8 +1034,7 @@
       // Initialize guest UI
       initializeRoleBasedUI();
       
-      // Load shared playlists and queue for guests
-      loadPlaylists();
+      // Load only shared data for guests (no playlists since they don't have Spotify auth)
       loadQueue();
       
       // Socket.IO will automatically connect when the page loads
@@ -1998,19 +1997,21 @@
         document.getElementById('login').style.display = 'none';
         document.getElementById('playlists').style.display = 'block';
         
-        // Update the playlist section title based on guest mode
+        // Update the playlist section title based on user role
         const playlistsTitle = document.querySelector('#playlists h2');
-        if (data.guest_mode) {
-          playlistsTitle.textContent = '🎵 Host\'s Shared Playlists';
-        } else {
+        if (data.is_listener) {
+          playlistsTitle.textContent = '🎵 Host\'s Playlists';
+        } else if (data.is_host) {
           playlistsTitle.textContent = 'Your Playlists';
+        } else {
+          playlistsTitle.textContent = 'Playlists';
         }
         
         const ul = document.getElementById('playlist-list');
         ul.innerHTML = ''; // Clear loading indicator
         
-        // Show message if guest mode and no playlists
-        if (data.guest_mode && data.items.length === 0) {
+        // Show message if listener and no playlists
+        if (data.is_listener && data.items.length === 0) {
           const messageDiv = document.createElement('div');
           messageDiv.style.cssText = `
             text-align: center;
@@ -2035,14 +2036,14 @@
           li.innerHTML = `
             <span>${pl.name}</span>
             <small>${pl.tracks ? pl.tracks.total : 'Unknown'} tracks</small>
-            ${data.guest_mode ? '<small style="color: #9C27B0;">👤 Shared</small>' : ''}
+            ${data.is_listener ? '<small style="color: #9C27B0;">👤 Host\'s Playlist</small>' : ''}
           `;
           li.onclick = () => loadPlaylistTracks(pl.id);
           ul.appendChild(li);
         });
         
-        // Add guest mode info message
-        if (data.guest_mode && data.items.length > 0) {
+        // Add listener mode info message
+        if (data.is_listener && data.items.length > 0) {
           const infoDiv = document.createElement('div');
           infoDiv.style.cssText = `
             background: rgba(156, 39, 176, 0.1);
@@ -2081,8 +2082,9 @@
         return;
       }
       
-      if (window.userRole !== 'host') {
-        alert('Only hosts can add tracks to the queue.');
+      // Allow both hosts and listeners to add tracks to the queue
+      if (window.userRole !== 'host' && window.userRole !== 'listener') {
+        alert('You must be a host or listener to add tracks to the queue.');
         return;
       }
       
@@ -2234,15 +2236,18 @@
     }
 
     window.onload = function() {
-      loadPlaylists();
+      // Load playlists for hosts and listeners (listeners see host's playlists)
+      if (window.userRole === 'host' || window.userRole === 'listener') {
+        loadPlaylists();
+      }
       loadInitialQueue();
       
       // Initialize role-based UI
       console.log('Page loaded, initializing role-based UI...');
       initializeRoleBasedUI();
       
-      // Fetch user profile if logged in (not guest)
-      if (window.userRole && window.userRole !== 'guest') {
+      // Fetch user profile if logged in (not guest or listener without Spotify)
+      if (window.userRole === 'host') {
         fetchUserProfile();
       }
       
@@ -2620,9 +2625,11 @@
           // Update the role indicator with the real name
           updateUserDisplayName(data.display_name);
           
-          // Reload playlists now that we have proper user authentication
-          console.log('Reloading playlists with updated user profile...');
-          loadPlaylists();
+          // Only reload playlists for hosts (listeners get host's playlists automatically)
+          if (window.userRole === 'host') {
+            console.log('Reloading playlists with updated user profile...');
+            loadPlaylists();
+          }
           
         } else {
           const error = await response.json();

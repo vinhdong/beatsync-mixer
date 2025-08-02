@@ -274,58 +274,137 @@ def callback():
 # Fetch playlists
 @app.route("/playlists")
 def playlists():
-    token_info = session.get("spotify_token")
-    if not token_info:
-        print("No Spotify token in session - redirecting to login")
-        return jsonify({"error": "Not authenticated", "redirect": "/login"}), 401
+    user_role = session.get("role")
     
-    access_token = token_info.get("access_token")
-    if not access_token:
-        print("No access token available - redirecting to login")
-        return jsonify({"error": "Not authenticated", "redirect": "/login"}), 401
-    
-    try:
-        # Use manual IP-based fetch to avoid DNS timeouts
-        data = manual_playlists_fetch(access_token)
+    # For hosts: use their own Spotify token
+    if user_role == "host":
+        token_info = session.get("spotify_token")
+        if not token_info:
+            print("Host has no Spotify token in session")
+            return jsonify({"error": "Not authenticated", "redirect": "/login"}), 401
         
-        if not data:
-            print("Manual playlists fetch failed - likely network issue")
+        access_token = token_info.get("access_token")
+        if not access_token:
+            print("Host has no access token available")
+            return jsonify({"error": "Not authenticated", "redirect": "/login"}), 401
+            
+        try:
+            # Use manual IP-based fetch to avoid DNS timeouts
+            data = manual_playlists_fetch(access_token)
+            
+            if not data:
+                print("Manual playlists fetch failed - likely network issue")
+                return jsonify({"error": "Failed to fetch playlists"}), 500
+            
+            # Cache playlists for listeners to access
+            cache.set("host_playlists", data, timeout=300)  # Cache for 5 minutes
+            
+            # Return only essential data to reduce response size
+            simplified_playlists = {
+                "items": [
+                    {
+                        "id": playlist["id"],
+                        "name": playlist["name"],
+                        "description": playlist.get("description", ""),
+                        "tracks": {"total": playlist["tracks"]["total"]},
+                        "images": playlist.get("images", [])[:1],  # Only first image
+                        "owner": {"display_name": playlist["owner"]["display_name"]}
+                    }
+                    for playlist in data.get("items", [])
+                ],
+                "total": data.get("total", 0),
+                "is_host": True
+            }
+            
+            return jsonify(simplified_playlists)
+            
+        except Exception as e:
+            print(f"Error fetching host playlists: {e}")
             return jsonify({"error": "Failed to fetch playlists"}), 500
-        
-        # Return only essential data to reduce response size
-        simplified_playlists = {
-            "items": [
-                {
-                    "id": playlist["id"],
-                    "name": playlist["name"],
-                    "description": playlist.get("description", ""),
-                    "tracks": {"total": playlist["tracks"]["total"]},
-                    "images": playlist.get("images", [])[:1],  # Only first image
-                    "owner": {"display_name": playlist["owner"]["display_name"]}
+    
+    # For listeners: serve cached host playlists
+    elif user_role == "listener":
+        try:
+            # Try to get cached host playlists
+            cached_data = cache.get("host_playlists")
+            
+            if cached_data:
+                # Return the cached host playlists
+                simplified_playlists = {
+                    "items": [
+                        {
+                            "id": playlist["id"],
+                            "name": playlist["name"],
+                            "description": playlist.get("description", ""),
+                            "tracks": {"total": playlist["tracks"]["total"]},
+                            "images": playlist.get("images", [])[:1],  # Only first image
+                            "owner": {"display_name": playlist["owner"]["display_name"]}
+                        }
+                        for playlist in cached_data.get("items", [])
+                    ],
+                    "total": cached_data.get("total", 0),
+                    "is_listener": True,
+                    "message": "Viewing host's playlists"
                 }
-                for playlist in data.get("items", [])
-            ],
-            "total": data.get("total", 0)
-        }
-        
-        return jsonify(simplified_playlists)
-    except Exception as e:
-        print(f"Error fetching playlists: {e}")
-        return jsonify({"error": "Failed to fetch playlists"}), 500
+                
+                return jsonify(simplified_playlists)
+            else:
+                # No cached playlists available
+                return jsonify({
+                    "items": [],
+                    "total": 0,
+                    "is_listener": True,
+                    "message": "No playlists available. Host needs to load their playlists first."
+                })
+                
+        except Exception as e:
+            print(f"Error serving cached playlists to listener: {e}")
+            return jsonify({
+                "items": [],
+                "total": 0,
+                "is_listener": True,
+                "error": "Failed to load playlists"
+            })
+    
+    # For guests and other roles
+    else:
+        return jsonify({
+            "items": [],
+            "total": 0,
+            "message": "Playlists not available for this role"
+        })
 
 
 # Fetch tracks for a given playlist
 @app.route("/playlists/<playlist_id>/tracks")
 def playlist_tracks(playlist_id):
-    token_info = session.get("spotify_token")
-    if not token_info:
-        print("No Spotify token in session - redirecting to login")
-        return jsonify({"error": "Not authenticated", "redirect": "/login"}), 401
+    user_role = session.get("role")
     
-    access_token = token_info.get("access_token")
-    if not access_token:
-        print("No access token available - redirecting to login")
-        return jsonify({"error": "Not authenticated", "redirect": "/login"}), 401
+    # For hosts: use their own Spotify token
+    if user_role == "host":
+        token_info = session.get("spotify_token")
+        if not token_info:
+            print("Host has no Spotify token in session")
+            return jsonify({"error": "Not authenticated", "redirect": "/login"}), 401
+        
+        access_token = token_info.get("access_token")
+        if not access_token:
+            print("Host has no access token available")
+            return jsonify({"error": "Not authenticated", "redirect": "/login"}), 401
+            
+        # Cache the host's token for listeners to use
+        cache.set("host_access_token", access_token, timeout=300)  # Cache for 5 minutes
+        
+    # For listeners: use cached host token
+    elif user_role == "listener":
+        access_token = cache.get("host_access_token")
+        if not access_token:
+            print("No cached host token available for listener")
+            return jsonify({"error": "Host must be online to load tracks. Ask the host to access their playlists first."}), 503
+    
+    # For other roles
+    else:
+        return jsonify({"error": "Not authorized to view playlist tracks"}), 403
     
     try:
         # Get pagination parameters
@@ -359,7 +438,8 @@ def playlist_tracks(playlist_id):
             ],
             "total": data.get("total", 0),
             "offset": data.get("offset", 0),
-            "limit": data.get("limit", limit)
+            "limit": data.get("limit", limit),
+            "is_listener": user_role == "listener"
         }
         
         return jsonify(simplified_tracks)
@@ -627,7 +707,7 @@ def default_error_handler(e):
 
 @socketio.on("queue_add")
 def handle_queue_add(data):
-    """Add track to queue - Host only"""
+    """Add track to queue - Host and Listener allowed"""
     try:
         # Check if session exists and has role
         user_role = session.get("role")
@@ -637,7 +717,10 @@ def handle_queue_add(data):
             emit("error", {"message": "Authentication expired. Please refresh the page and log in again."})
             return
             
-        if user_role != "host":
+        # Allow both hosts and listeners to add tracks to the queue
+        if user_role not in ["host", "listener"]:
+            emit("error", {"message": "Only hosts and listeners can add tracks to the queue"})
+            return
             emit("error", {"message": "Only hosts can add tracks to the queue"})
             return
         
@@ -1160,8 +1243,8 @@ def select_role():
             <div class="emoji">🎧</div>
             <h2>Join as Listener</h2>
             <div class="role-description">
-                Vote on tracks, chat with others, and enjoy the collaborative experience.
-                <br><strong>No Spotify account required!</strong> Join instantly as a guest.
+                Browse host's playlists, add tracks to queue, vote on music, and chat with others.
+                <br><strong>No Spotify account required!</strong> Join instantly and participate fully.
             </div>
             <a href="/join-listener" class="role-btn listener-btn">👥 Join Session</a>
         </div>
