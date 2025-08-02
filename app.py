@@ -738,6 +738,31 @@ def index():
     role = session.get("role", "guest")
     user_id = session.get("user_id", "")
     display_name = session.get("display_name", "Guest")
+    emergency_mode = session.get("emergency_mode", False)
+    
+    # Check for emergency mode parameter
+    if request.args.get('emergency') == 'true' or emergency_mode:
+        emergency_banner = """
+        <div id="emergency-banner" style="
+            background: linear-gradient(135deg, #e74c3c, #c0392b);
+            color: white;
+            padding: 15px;
+            text-align: center;
+            font-weight: bold;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+            border-bottom: 3px solid #a93226;
+            margin-bottom: 20px;
+        ">
+            🚨 EMERGENCY MODE ACTIVE 🚨<br>
+            <small style="font-weight: normal; opacity: 0.9;">
+                Limited functionality due to Spotify connection issues. 
+                Some features like playlist integration and playback control may not work.
+                <a href="/login?role=host&retry=1" style="color: #fff; text-decoration: underline; margin-left: 10px;">Try Normal Mode Again</a>
+            </small>
+        </div>
+        """
+        # Insert emergency banner after body tag
+        html_content = html_content.replace('<body>', '<body>' + emergency_banner)
     
     # Inject JavaScript variables
     role_script = f"""
@@ -745,7 +770,9 @@ def index():
         window.userRole = '{role}';
         window.userId = '{user_id}';
         window.displayName = '{display_name}';
+        window.emergencyMode = {str(emergency_mode).lower()};
         console.log('User role:', window.userRole);
+        console.log('Emergency mode:', window.emergencyMode);
     </script>
     """
     
@@ -1256,7 +1283,15 @@ def select_role():
             <strong>Please try:</strong><br>
             1. Wait 30 seconds and try again<br>
             2. Clear browser cache and cookies<br>
-            3. Try a different browser or incognito mode
+            3. Try a different browser or incognito mode<br><br>
+            <strong>Alternative:</strong><br>
+            If the issue persists, you can start an emergency session without full Spotify integration.
+        </div>
+        <div style="text-align: center; margin-bottom: 20px;">
+            <a href="/emergency-host" style="background-color: #e74c3c; color: white; padding: 12px 24px; text-decoration: none; border-radius: 25px; font-weight: bold; display: inline-block; margin: 5px;">
+                🚨 Emergency Host Mode
+            </a>
+            <br><small style="color: #666; margin-top: 10px; display: block;">Limited functionality - for when OAuth fails</small>
         </div>
         """
     
@@ -1529,6 +1564,57 @@ def clear_session_and_login():
     time.sleep(0.1)
     
     return redirect(f"/login?role={requested_role}&retry=1")
+
+
+@app.route("/emergency-host")
+def emergency_host():
+    """Emergency host mode when OAuth fails - limited functionality"""
+    print("Emergency host mode activated due to OAuth failures")
+    
+    # Check if someone is already hosting
+    host_file = 'current_host.txt'
+    if os.path.exists(host_file):
+        with open(host_file, 'r') as f:
+            current_host = f.read().strip()
+        return redirect("/select-role?error=host_taken")
+    
+    # Create emergency host session without Spotify token
+    import time
+    import uuid
+    
+    emergency_user_id = f"emergency_host_{int(time.time())}"
+    emergency_display_name = "Emergency Host (Limited Mode)"
+    
+    # Set session data
+    session["role"] = "host"
+    session["user_id"] = emergency_user_id
+    session["display_name"] = emergency_display_name
+    session["emergency_mode"] = True  # Flag to indicate limited functionality
+    session["created_at"] = datetime.utcnow().isoformat() + "+00:00"
+    session.permanent = True
+    
+    # Create host file
+    with open(host_file, 'w') as f:
+        f.write(f"{emergency_user_id}|{emergency_display_name}")
+    
+    print(f"Emergency host created: {emergency_user_id}")
+    
+    # Clear any existing session data
+    db = SessionLocal()
+    try:
+        # Clear all previous data for clean start
+        db.query(Vote).delete()
+        db.query(QueueItem).delete()
+        db.query(ChatMessage).delete()
+        db.commit()
+        print("Cleared all previous session data for emergency mode")
+    except Exception as e:
+        db.rollback()
+        print(f"Error clearing data for emergency mode: {e}")
+    finally:
+        db.close()
+    
+    return redirect("/?emergency=true")
 
 
 @app.route("/restart-session", methods=["POST"])
