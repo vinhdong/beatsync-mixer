@@ -29,7 +29,7 @@ app.config['CACHE_DEFAULT_TIMEOUT'] = 300  # 5 minutes
 cache = Cache(app)
 
 
-# OAuth setup for Spotify
+# OAuth setup for Spotify with improved timeout and retry settings
 oauth = OAuth(app)
 oauth.register(
     name="spotify",
@@ -37,7 +37,11 @@ oauth.register(
     client_secret=os.getenv("SPOTIFY_CLIENT_SECRET"),
     access_token_url="https://accounts.spotify.com/api/token",
     authorize_url="https://accounts.spotify.com/authorize",
-    client_kwargs={"scope": "user-read-playback-state user-modify-playback-state streaming playlist-read-private user-read-private user-read-email"},
+    client_kwargs={
+        "scope": "user-read-playback-state user-modify-playback-state streaming playlist-read-private user-read-private user-read-email",
+        "timeout": 30,  # 30 second timeout for requests
+        "retries": 3,   # Retry failed requests up to 3 times
+    },
 )
 
 
@@ -147,29 +151,92 @@ def session_info():
     })
 
 
+# OAuth debug endpoint
+@app.route("/oauth-debug")
+def oauth_debug():
+    """Debug endpoint to check OAuth configuration"""
+    return jsonify({
+        "spotify_client_id": os.getenv("SPOTIFY_CLIENT_ID")[:10] + "..." if os.getenv("SPOTIFY_CLIENT_ID") else None,
+        "spotify_redirect_uri": os.getenv("SPOTIFY_REDIRECT_URI"),
+        "has_client_secret": bool(os.getenv("SPOTIFY_CLIENT_SECRET")),
+        "flask_env": os.getenv("FLASK_ENV", "development"),
+        "heroku_app_name": os.getenv("HEROKU_APP_NAME"),
+        "current_host": request.host_url,
+        "oauth_config": {
+            "access_token_url": "https://accounts.spotify.com/api/token",
+            "authorize_url": "https://accounts.spotify.com/authorize"
+        }
+    })
+
+
 # Login route
 @app.route("/login")
 def login():
-    # Store the requested role in session
-    requested_role = request.args.get('role', 'listener')
-    session['requested_role'] = requested_role
-    return oauth.spotify.authorize_redirect(os.getenv("SPOTIFY_REDIRECT_URI"))
+    try:
+        # Store the requested role in session
+        requested_role = request.args.get('role', 'listener')
+        session['requested_role'] = requested_role
+        
+        # Get the redirect URI from environment (should be set for Heroku)
+        redirect_uri = os.getenv("SPOTIFY_REDIRECT_URI")
+        if not redirect_uri:
+            print("ERROR: SPOTIFY_REDIRECT_URI not set!")
+            return redirect("/select-role?error=oauth_failed")
+        
+        print(f"Initiating OAuth flow with redirect URI: {redirect_uri}")
+        return oauth.spotify.authorize_redirect(redirect_uri)
+        
+    except Exception as e:
+        print(f"Login route error: {e}")
+        import traceback
+        print(f"Full traceback: {traceback.format_exc()}")
+        return redirect("/select-role?error=oauth_failed")
 
 
 # Callback route
 @app.route("/callback")
 def callback():
-    try:
-        token = oauth.spotify.authorize_access_token()
-        session["spotify_token"] = token
-        oauth.spotify.token = token
-        
-        # Fetch user profile
+    import time
+    max_retries = 3
+    retry_delay = 2  # seconds
+    
+    for attempt in range(max_retries):
         try:
-            user_response = oauth.spotify.get("https://api.spotify.com/v1/me", token=token)
-            user_data = user_response.json()
-            user_id = user_data.get("id")
-            display_name = user_data.get("display_name", user_id)
+            print(f"OAuth callback attempt {attempt + 1}/{max_retries}")
+            
+            # Try to get the access token with timeout handling
+            token = oauth.spotify.authorize_access_token()
+            session["spotify_token"] = token
+            oauth.spotify.token = token
+            
+            print("Successfully obtained Spotify access token")
+            
+            # Fetch user profile with retry logic
+            user_response = None
+            for profile_attempt in range(3):
+                try:
+                    user_response = oauth.spotify.get("https://api.spotify.com/v1/me", token=token)
+                    if user_response.status_code == 200:
+                        break
+                    else:
+                        print(f"Profile fetch attempt {profile_attempt + 1} failed with status {user_response.status_code}")
+                        if profile_attempt < 2:
+                            time.sleep(1)
+                except Exception as e:
+                    print(f"Profile fetch attempt {profile_attempt + 1} error: {e}")
+                    if profile_attempt < 2:
+                        time.sleep(1)
+            
+            if user_response and user_response.status_code == 200:
+                user_data = user_response.json()
+                user_id = user_data.get("id")
+                display_name = user_data.get("display_name", user_id)
+                print(f"Successfully fetched user profile: {user_id}")
+            else:
+                print("Failed to fetch user profile, using defaults")
+                # Default to generic user info if we can't fetch profile
+                user_id = f"user_{int(time.time())}"
+                display_name = "Spotify User"
             
             # Get the requested role from session
             requested_role = session.get('requested_role', 'listener')
@@ -203,26 +270,33 @@ def callback():
                 
                 print(f"User {user_id} joined as listener")
             
+            # Clear the requested role from session
+            session.pop('requested_role', None)
+            
+            return redirect("/")
+            
         except Exception as e:
-            print(f"Error fetching user profile: {e}")
-            # Default to listener role if we can't fetch user info
-            session["role"] = "listener"
-            session["user_id"] = "unknown"
-            session["display_name"] = "Unknown User"
-        
-        # Clear the requested role from session
-        session.pop('requested_role', None)
-        
-        return redirect("/")
-        
-    except Exception as e:
-        print(f"OAuth callback error: {e}")
-        # Log the specific error type for debugging
-        import traceback
-        print(f"Full traceback: {traceback.format_exc()}")
-        
-        # Redirect back to role selection with an error
-        return redirect("/select-role?error=oauth_failed")
+            print(f"OAuth callback error on attempt {attempt + 1}: {e}")
+            print(f"Error type: {type(e).__name__}")
+            
+            # Check if it's a connection/timeout error that might be retryable
+            if any(error_type in str(e).lower() for error_type in ['timeout', 'connection', 'newconnectionerror', 'maxretryerror']):
+                if attempt < max_retries - 1:
+                    print(f"Retrying OAuth callback in {retry_delay} seconds...")
+                    time.sleep(retry_delay)
+                    retry_delay *= 2  # Exponential backoff
+                    continue
+            
+            # Log the full traceback for debugging
+            import traceback
+            print(f"Full traceback: {traceback.format_exc()}")
+            
+            # If all retries failed or it's a non-retryable error, redirect with error
+            break
+    
+    # All retries failed
+    print("All OAuth callback attempts failed")
+    return redirect("/select-role?error=oauth_failed")
 
 
 # Fetch playlists
@@ -885,7 +959,14 @@ def select_role():
         error_message = """
         <div style="background: #ffe6e6; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #e74c3c; color: #c0392b;">
             <strong>⚠️ Authentication Failed</strong><br>
-            There was an issue connecting to Spotify. Please try again. If the problem persists, clear your browser cache and cookies.
+            There was an issue connecting to Spotify. This might be due to:<br>
+            • Network timeout (Heroku → Spotify)<br>
+            • Temporary Spotify API issues<br>
+            • Browser cache/cookie issues<br><br>
+            <strong>Please try:</strong><br>
+            1. Wait 30 seconds and try again<br>
+            2. Clear browser cache and cookies<br>
+            3. Try a different browser or incognito mode
         </div>
         """
     
