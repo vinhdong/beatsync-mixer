@@ -2,6 +2,7 @@ import os
 import json
 import ssl
 import redis
+import tempfile
 from urllib.parse import urlparse
 from datetime import datetime, timezone, timedelta
 import spotipy
@@ -12,7 +13,7 @@ import time
 import threading
 import traceback
 from dotenv import load_dotenv
-from flask import Flask, jsonify, session, redirect, url_for, send_from_directory, abort, request, request
+from flask import Flask, jsonify, session, redirect, url_for, send_from_directory, abort, request
 from sqlalchemy import create_engine, Column, Integer, String, DateTime
 from sqlalchemy.orm import sessionmaker, declarative_base
 from flask_socketio import SocketIO, emit
@@ -44,7 +45,7 @@ app.config['SESSION_KEY_PREFIX'] = 'beatsync:'
 # Configure session for production with OAuth compatibility
 app.config['SESSION_COOKIE_SECURE'] = True if os.getenv('FLASK_ENV') == 'production' else False
 app.config['SESSION_COOKIE_HTTPONLY'] = True
-app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'  # Allow cross-site requests for OAuth callbacks
+app.config['SESSION_COOKIE_SAMESITE'] = None  # Allow cross-site requests for OAuth callbacks and API calls
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=24)  # 24 hour sessions
 app.config['SESSION_REFRESH_EACH_REQUEST'] = False  # Don't refresh during OAuth flow to preserve state
 app.config['SESSION_COOKIE_NAME'] = 'beatsync_session'  # Custom session name
@@ -140,47 +141,6 @@ class ManualRedisCache:
         except Exception as e:
             print(f"Redis delete error for key {key}: {e}")
             return False
-
-# In-memory cache for current dyno to avoid redundant Redis reads
-in_memory_cache = {
-    "host_playlists": None,
-    "cached_at": 0,
-    "cache_ttl": 300  # 5 minutes in-memory cache
-}
-
-def get_cached_playlists():
-    """Get playlists from in-memory cache first, then Redis if needed"""
-    current_time = time.time()
-    
-    # Check if we have fresh in-memory cache
-    if (in_memory_cache["host_playlists"] and 
-        current_time - in_memory_cache["cached_at"] < in_memory_cache["cache_ttl"]):
-        print("Serving playlists from in-memory cache (fastest)")
-        return in_memory_cache["host_playlists"]
-    
-    # Try Redis cache
-    try:
-        cached_data = cache.get("host_playlists_simplified")
-        if cached_data:
-            print("Serving playlists from Redis cache")
-            # Update in-memory cache to avoid Redis on next request
-            in_memory_cache["host_playlists"] = cached_data
-            in_memory_cache["cached_at"] = current_time
-            return cached_data
-    except Exception as e:
-        print(f"Redis cache read failed: {e}")
-    
-    print("No cached playlists available")
-    return None
-
-def invalidate_playlist_cache():
-    """Clear both in-memory and Redis playlist cache"""
-    in_memory_cache["host_playlists"] = None
-    in_memory_cache["cached_at"] = 0
-    try:
-        cache.delete("host_playlists_simplified")
-    except:
-        pass
 
 # Configure caching with manual Redis bypass for DNS issues
 redis_url = os.getenv('REDIS_URL')
@@ -341,7 +301,7 @@ spotify_oauth = SpotifyOAuth(
     scope="user-read-playback-state user-modify-playback-state streaming playlist-read-private user-read-private user-read-email",
     show_dialog=False,
     cache_path=None,  # Don't use file-based cache, we'll handle tokens manually
-    requests_timeout=2,  # Ultra-short timeout - fail in 2s, not 10s
+    requests_timeout=5,  # Increased timeout - fail in 5s, not 2s for better reliability
     open_browser=False
 )
 
@@ -606,6 +566,13 @@ def playlists():
             if not data:
                 print("Manual playlists fetch failed - likely network issue")
                 return jsonify({"error": "Failed to fetch playlists"}), 500
+            
+            # IMMEDIATELY cache the host's token for listeners to use
+            try:
+                cache.set("host_access_token", access_token, timeout=1800)  # Cache for 30 minutes
+                print("Cached host access token for listeners")
+            except Exception as e:
+                print(f"Failed to cache host access token: {e}")
             
             # Prepare simplified response for host
             simplified_playlists = {
@@ -1037,8 +1004,6 @@ def handle_queue_add(data):
         # Allow both hosts and listeners to add tracks to the queue
         if user_role not in ["host", "listener"]:
             emit("error", {"message": "Only hosts and listeners can add tracks to the queue"})
-            return
-            emit("error", {"message": "Only hosts can add tracks to the queue"})
             return
         
         # Validate data
@@ -2229,7 +2194,7 @@ def manual_playlists_fetch(access_token):
             response = req_session.get(
                 url,
                 headers=headers,
-                timeout=(3, 3),
+                timeout=(5, 5),  # Increased timeout for better reliability
                 verify=False  # Skip SSL verification since we're using IP
             )
             
@@ -2265,7 +2230,7 @@ def manual_playlist_tracks_fetch(access_token, playlist_id, limit=50, offset=0):
             response = req_session.get(
                 url,
                 headers=headers,
-                timeout=(3, 3),
+                timeout=(5, 5),  # Increased timeout for better reliability
                 verify=False  # Skip SSL verification since we're using IP
             )
             
