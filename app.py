@@ -971,6 +971,16 @@ def select_role():
             Someone is already hosting a session. You can join as a listener or wait for the current host to sign out.
         </div>
         """
+    elif error == 'join_failed':
+        error_message = """
+        <div style="background: #ffe6e6; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #e74c3c; color: #c0392b;">
+            <strong>⚠️ Join Failed</strong><br>
+            There was an issue joining as a listener. This is usually temporary.<br><br>
+            <strong>Please try:</strong><br>
+            1. Refresh the page and try again<br>
+            2. Clear your browser cache if the issue persists
+        </div>
+        """
     elif error == 'csrf_error':
         error_message = """
         <div style="background: #ffe6e6; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #e74c3c; color: #c0392b;">
@@ -1151,9 +1161,9 @@ def select_role():
             <h2>Join as Listener</h2>
             <div class="role-description">
                 Vote on tracks, chat with others, and enjoy the collaborative experience.
-                <br><strong>Note:</strong> Limited control over playback
+                <br><strong>No Spotify account required!</strong> Join instantly as a guest.
             </div>
-            <a href="/login?role=listener" class="role-btn listener-btn">👥 Join Session</a>
+            <a href="/join-listener" class="role-btn listener-btn">👥 Join Session</a>
         </div>
         
         <div class="restart-section">
@@ -1625,6 +1635,33 @@ def remove_from_queue(track_uri):
         return jsonify({"error": str(e)}), 500
     finally:
         db.close()
+
+
+# Direct join route for listeners (no Spotify auth required)
+@app.route("/join-listener")
+def join_listener():
+    """Join as listener without requiring Spotify authentication"""
+    try:
+        # Generate a unique guest ID
+        guest_id = f"listener_{int(time.time())}_{request.remote_addr.replace('.', '')[-4:]}"
+        
+        # Set listener session without Spotify authentication
+        session["role"] = "listener"
+        session["user_id"] = guest_id
+        session["display_name"] = "Listener"
+        session["initialized"] = True
+        session["created_at"] = datetime.now(timezone.utc).isoformat()
+        
+        # Make session permanent
+        session.permanent = True
+        
+        print(f"Listener joined: {guest_id}")
+        
+        return redirect("/")
+        
+    except Exception as e:
+        print(f"Error joining as listener: {e}")
+        return redirect("/select-role?error=join_failed")
 
 
 # Manual token exchange fallback for Heroku DNS issues
