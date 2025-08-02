@@ -297,25 +297,26 @@ def callback():
         
         # Use Spotipy's built-in token exchange - clean and reliable
         try:
+            print(">>> USING SPOTIPY OAUTH - NEW CODE RUNNING <<<")
             token_info = spotify_oauth.get_access_token(code)
-            print("Successfully obtained Spotify access token with Spotipy")
+            print(">>> SPOTIPY TOKEN EXCHANGE SUCCESSFUL <<<")
         except Exception as e:
-            print(f"Spotipy token exchange failed: {e}")
+            print(f">>> SPOTIPY TOKEN EXCHANGE FAILED: {e} <<<")
             return redirect("/select-role?error=oauth_failed")
         
         # Store token in session
         session["spotify_token"] = token_info
         
         # Get user profile using Spotipy
-        print("Fetching user profile...")
+        print(">>> FETCHING USER PROFILE WITH SPOTIPY <<<")
         try:
             sp = spotipy.Spotify(auth=token_info['access_token'])
             user_data = sp.me()
             user_id = user_data.get("id")
             display_name = user_data.get("display_name", user_id)
-            print(f"Successfully fetched user profile: {user_id}")
+            print(f">>> SPOTIPY USER PROFILE SUCCESS: {user_id} <<<")
         except Exception as e:
-            print(f"User profile fetch failed: {e}")
+            print(f">>> SPOTIPY USER PROFILE FAILED: {e} <<<")
             # Continue with default user info if profile fetch fails
             user_id = f"user_{int(time.time())}"
             display_name = "Spotify User"
