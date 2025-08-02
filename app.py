@@ -374,8 +374,9 @@ def recommend(track_uri):
 # Serve front-end
 @app.route("/")
 def index():
-    # Check if user is authenticated
-    if not session.get("role"):
+    # Check if user is authenticated - allow guest, host, and listener roles
+    user_role = session.get("role")
+    if not user_role or user_role not in ['guest', 'host', 'listener']:
         # Check for error messages
         error = request.args.get('error')
         if error == 'host_taken':
@@ -576,8 +577,7 @@ def handle_queue_add(data):
                     "track_uri": qi.track_uri,
                     "track_name": qi.track_name,
                     "timestamp": qi.timestamp.isoformat() if qi.timestamp else None,
-                },
-                broadcast=True
+                }
             )
             print("Queue update broadcasted to all clients")
             
@@ -637,8 +637,7 @@ def handle_vote_add(data):
             # Broadcast updated vote counts
             socketio.emit(
                 "vote_updated", 
-                {"track_uri": track_uri, "up_votes": up_votes, "down_votes": down_votes},
-                broadcast=True
+                {"track_uri": track_uri, "up_votes": up_votes, "down_votes": down_votes}
             )
 
         finally:
@@ -679,8 +678,7 @@ def handle_chat_message(data):
                     "user": chat_msg.user,
                     "message": chat_msg.message,
                     "timestamp": chat_msg.timestamp.isoformat() if chat_msg.timestamp else None,
-                },
-                broadcast=True
+                }
             )
 
         finally:
@@ -703,7 +701,7 @@ def clear_queue():
         db.query(QueueItem).delete()
         db.commit()
         # Broadcast queue clear to all clients
-        socketio.emit("queue_cleared", room=None)
+        socketio.emit("queue_cleared")
         return jsonify({"status": "success", "message": "Queue cleared"})
     finally:
         db.close()
@@ -1127,6 +1125,20 @@ def sign_out_host():
     return jsonify({"status": "success", "message": "Signed out as host"})
 
 
+@app.route("/logout")
+def logout():
+    """Clear session and redirect to role selection"""
+    session.clear()
+    return redirect("/select-role")
+
+
+@app.route("/reset-session")
+def reset_session():
+    """Reset user session and redirect to role selection"""
+    session.clear()
+    return redirect("/select-role")
+
+
 @app.route("/restart-session", methods=["POST"])
 def restart_session():
     """Restart the entire session - clears all session data, host state, queue, votes, and chat"""
@@ -1155,10 +1167,10 @@ def restart_session():
             db.commit()
             
             # Emit events to all connected clients
-            socketio.emit('queue_cleared', broadcast=True)
-            socketio.emit('votes_cleared', broadcast=True)
-            socketio.emit('chat_cleared', broadcast=True)
-            socketio.emit('session_restarted', broadcast=True)
+            socketio.emit('queue_cleared')
+            socketio.emit('votes_cleared')
+            socketio.emit('chat_cleared')
+            socketio.emit('session_restarted')
             
         except Exception as e:
             db.rollback()
@@ -1274,7 +1286,6 @@ def get_next_track():
                     "down_votes": down_votes,
                     "net_score": net_score
                 }
-        
         if not best_track:
             # No suitable track found (all have more dislikes than likes)
             return jsonify({"error": "No playable tracks in queue"}), 404
@@ -1347,7 +1358,7 @@ def remove_from_queue(track_uri):
             socketio.emit('track_removed', {
                 'track_uri': track_uri,
                 'track_name': item.track_name
-            }, broadcast=True)
+            })
             
             return jsonify({"status": "success", "message": "Track removed from queue"})
         else:

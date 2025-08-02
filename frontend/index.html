@@ -867,9 +867,24 @@
   <div class="main-content">
     <div class="header-container">
       <h1>🎵 BeatSync Mixer</h1>
-      <button id="host-restart-btn" onclick="restartSession()">
-        🔄 Restart Session
-      </button>
+      <div style="display: flex; gap: 10px; align-items: center;">
+        <button id="logout-btn" onclick="window.location.href='/logout'" style="
+          background-color: #1db954; 
+          color: white; 
+          border: none; 
+          padding: 8px 16px; 
+          border-radius: 4px; 
+          cursor: pointer; 
+          font-size: 0.9em; 
+          font-weight: bold;
+          transition: all 0.3s ease;
+        " onmouseover="this.style.backgroundColor='#1ed760'" onmouseout="this.style.backgroundColor='#1db954'">
+          🔄 Switch Role
+        </button>
+        <button id="host-restart-btn" onclick="restartSession()">
+          🔄 Restart Session
+        </button>
+      </div>
     </div>
 
     <div id="login">
@@ -2352,34 +2367,62 @@
         roleSpan.textContent = role.toUpperCase();
         h1.appendChild(roleSpan);
         
-        // Also show display name if available
+        // Always show a container for user info and logout button
+        const userContainer = document.createElement('div');
+        userContainer.style.cssText = 'font-size: 0.7em; color: #666; margin-top: 5px; display: flex; align-items: center; gap: 10px;';
+        
+        // Show display name if available, otherwise show generic welcome
         if (window.displayName && window.displayName !== 'Guest') {
-          const nameSpan = document.createElement('div');
-          nameSpan.style.cssText = 'font-size: 0.7em; color: #666; margin-top: 5px;';
+          const nameSpan = document.createElement('span');
           nameSpan.textContent = `Welcome, ${window.displayName}!`;
-          h1.appendChild(nameSpan);
-          
-          // Add sign-out button for hosts
-          if (role === 'host') {
-            const signOutBtn = document.createElement('button');
-            signOutBtn.textContent = '🚪 Sign Out as Host';
-            signOutBtn.style.cssText = `
-              font-size: 0.5em; 
-              background: #e74c3c; 
-              color: white; 
-              border: none; 
-              padding: 8px 12px; 
-              border-radius: 4px; 
-              margin-left: 10px; 
-              cursor: pointer;
-              transition: background-color 0.3s;
-            `;
-            signOutBtn.onmouseover = () => signOutBtn.style.backgroundColor = '#c0392b';
-            signOutBtn.onmouseout = () => signOutBtn.style.backgroundColor = '#e74c3c';
-            signOutBtn.onclick = signOutAsHost;
-            nameSpan.appendChild(signOutBtn);
-          }
+          userContainer.appendChild(nameSpan);
+        } else if (role === 'guest') {
+          const nameSpan = document.createElement('span');
+          nameSpan.textContent = 'Welcome, Guest!';
+          userContainer.appendChild(nameSpan);
         }
+        
+        // Add logout/role switch button for all roles
+        if (role === 'host') {
+          const signOutBtn = document.createElement('button');
+          signOutBtn.textContent = '🚪 Sign Out as Host';
+          signOutBtn.style.cssText = `
+            font-size: 1em; 
+            background: #e74c3c; 
+            color: white; 
+            border: none; 
+            padding: 8px 12px; 
+            border-radius: 4px; 
+            cursor: pointer;
+            transition: background-color 0.3s;
+          `;
+          signOutBtn.onmouseover = () => signOutBtn.style.backgroundColor = '#c0392b';
+          signOutBtn.onmouseout = () => signOutBtn.style.backgroundColor = '#e74c3c';
+          signOutBtn.onclick = signOutAsHost;
+          userContainer.appendChild(signOutBtn);
+        } else {
+          // Add logout/role switch button for listeners and guests
+          const switchBtn = document.createElement('button');
+          switchBtn.textContent = role === 'guest' ? '🔑 Login or Switch Role' : '🔄 Switch Role';
+          switchBtn.style.cssText = `
+            font-size: 1em; 
+            background: #1db954; 
+            color: white; 
+            border: none; 
+            padding: 8px 12px; 
+            border-radius: 4px; 
+            cursor: pointer;
+            transition: background-color 0.3s;
+          `;
+          switchBtn.onmouseover = () => switchBtn.style.backgroundColor = '#1ed760';
+          switchBtn.onmouseout = () => switchBtn.style.backgroundColor = '#1db954';
+          switchBtn.onclick = () => {
+            window.location.href = '/logout';
+          };
+          userContainer.appendChild(switchBtn);
+        }
+        
+        h1.appendChild(userContainer);
       }
     }
 
