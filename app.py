@@ -145,7 +145,7 @@ def ensure_session():
             return
             
         # Ensure all users have a role (fallback for lost sessions)
-        if not session.get('role') and request.endpoint not in ['health', 'session_info', 'oauth_debug', 'select_role']:
+        if not session.get('role') and request.endpoint not in ['health', 'select_role']:
             session['role'] = 'guest'
             session['user_id'] = f"guest_{datetime.now().timestamp()}"
             session['display_name'] = 'Guest'
@@ -167,91 +167,13 @@ def health():
     return jsonify(status="ok")
 
 
-# Session debug endpoint
-@app.route("/session-info")
-def session_info():
-    return jsonify({
-        "session_data": dict(session),
-        "role": session.get("role"),
-        "user_id": session.get("user_id"),
-        "has_token": bool(session.get("spotify_token")),
-        "cookies": dict(request.cookies) if request.cookies else {}
-    })
-
-
-# OAuth debug endpoint
-@app.route("/oauth-debug")
-def oauth_debug():
-    """Debug endpoint to check OAuth configuration"""
-    return jsonify({
-        "spotify_client_id": os.getenv("SPOTIFY_CLIENT_ID")[:10] + "..." if os.getenv("SPOTIFY_CLIENT_ID") else None,
-        "spotify_redirect_uri": os.getenv("SPOTIFY_REDIRECT_URI"),
-        "has_client_secret": bool(os.getenv("SPOTIFY_CLIENT_SECRET")),
-        "flask_env": os.getenv("FLASK_ENV", "development"),
-        "heroku_app_name": os.getenv("HEROKU_APP_NAME"),
-        "current_host": request.host_url,
-        "oauth_config": {
-            "access_token_url": "https://accounts.spotify.com/api/token",
-            "authorize_url": "https://accounts.spotify.com/authorize"
-        }
-    })
-
-
-@app.route("/session-debug")
-def session_debug():
-    """Debug endpoint to check session state during OAuth issues"""
-    session_data = {}
-    
-    # Get all session keys and their types (not full values for security)
-    for key in session.keys():
-        value = session[key]
-        if key.startswith('_state_spotify_'):
-            if isinstance(value, dict):
-                session_data[key] = {
-                    'type': 'dict',
-                    'keys': list(value.keys()) if isinstance(value, dict) else None,
-                    'has_exp': 'exp' in value if isinstance(value, dict) else False,
-                    'exp_value': value.get('exp') if isinstance(value, dict) else None
-                }
-            else:
-                session_data[key] = {
-                    'type': type(value).__name__,
-                    'length': len(str(value)) if value else 0
-                }
-        elif key in ['spotify_token', 'oauth2_token']:
-            session_data[key] = {
-                'type': type(value).__name__,
-                'present': bool(value),
-                'keys': list(value.keys()) if isinstance(value, dict) else None
-            }
-        else:
-            session_data[key] = {
-                'type': type(value).__name__,
-                'value': value if key in ['role', 'user_id', 'display_name', 'requested_role', 'callback_count'] else '[hidden]'
-            }
-    
-    import time
-    return jsonify({
-        "session_data": session_data,
-        "session_id": request.cookies.get('session', 'no-session-cookie'),
-        "current_time": time.time(),
-        "oauth_states_count": len([k for k in session.keys() if k.startswith('_state_spotify_')]),
-        "total_session_keys": len(session.keys())
-    })
-
-
 # Login route
 @app.route("/login")
 def login():
     try:
         # Store the requested role in session
         requested_role = request.args.get('role', 'listener')
-        
-        print(f"Login route called with role: {requested_role}")
-        
         session['requested_role'] = requested_role
-        
-        print(f"Initiating OAuth flow for role: {requested_role}")
         
         # Ensure session is properly initialized before OAuth
         if not session.get('initialized'):
@@ -263,24 +185,16 @@ def login():
         
         # Use Spotipy's OAuth to get authorization URL
         auth_url = spotify_oauth.get_authorize_url()
-        print(f"Redirecting to Spotify OAuth: {auth_url}")
-        
         return redirect(auth_url)
         
     except Exception as e:
         print(f"Login route error: {e}")
-        import traceback
-        print(f"Full traceback: {traceback.format_exc()}")
         return redirect("/select-role?error=oauth_failed")
 
 
 # Callback route
 @app.route("/callback")
 def callback():
-    print(f"OAuth callback received")
-    print(f"Request args: {dict(request.args)}")
-    print(f"Session at callback start: {dict(session)}")
-    
     try:
         # Get authorization code from callback
         code = request.args.get('code')
@@ -294,14 +208,11 @@ def callback():
             print("No authorization code received")
             return redirect("/select-role?error=oauth_failed")
         
-        print(f"Received authorization code, exchanging for token...")
-        
         # Use ONLY fast IP-based token exchange - no DNS/Spotipy fallback to avoid 20s delays
-        print(">>> USING FAST IP-BASED TOKEN EXCHANGE (BYPASSING DNS COMPLETELY) <<<")
         token_info = manual_token_exchange(code)
         
         if not token_info:
-            print(">>> FAST IP EXCHANGE FAILED - NETWORK/HEROKU ISSUE <<<")
+            print("Fast IP exchange failed - network/Heroku issue")
             error_msg = "network_timeout"
             return redirect(f"/select-role?error=oauth_failed&details={error_msg}")
         
@@ -309,14 +220,11 @@ def callback():
         session["spotify_token"] = token_info
         
         # Skip user profile fetch during callback to avoid H12 timeouts
-        # We'll fetch it later when needed in get_spotify_client()
-        print(">>> SKIPPING USER PROFILE FETCH TO AVOID H12 - USING DEFAULTS <<<")
         user_id = f"user_{int(time.time())}"  # Default fallback
         display_name = "Spotify User"  # Default fallback
         
         # Get the requested role from session
         requested_role = session.get('requested_role', 'listener')
-        print(f"Requested role: {requested_role}")
         
         # Handle role assignment
         if requested_role == 'host':
@@ -324,7 +232,6 @@ def callback():
             host_file = 'current_host.txt'
             
             if os.path.exists(host_file):
-                # Someone is already hosting
                 return redirect("/select-role?error=host_taken")
             
             # Set as host and create host file
@@ -336,15 +243,11 @@ def callback():
             with open(host_file, 'w') as f:
                 f.write(f"{user_id}|{display_name}")
             
-            print(f"User {user_id} is now hosting")
-            
         else:
             # Set as listener
             session["role"] = "listener"
             session["user_id"] = user_id
             session["display_name"] = display_name
-            
-            print(f"User {user_id} joined as listener")
         
         # Clear the requested role from session
         session.pop('requested_role', None)
@@ -352,17 +255,11 @@ def callback():
         # Ensure session is properly saved
         session.permanent = True
         
-        print(f"Final session state: {dict(session)}")
         return redirect("/")
         
     except Exception as e:
         print(f"OAuth callback error: {e}")
-        import traceback
-        print(f"Full traceback: {traceback.format_exc()}")
-        
-        # Clear session on error to prevent issues
         session.clear()
-        
         return redirect("/select-role?error=oauth_failed")
 
 
@@ -553,15 +450,8 @@ socketio = SocketIO(
 
 @socketio.on("connect")
 def handle_connect(auth):
-    print(f"Client connected: {request.sid}")
-    
     # Check if session is valid
     try:
-        session_data = dict(session)
-        print(f"Session data on connect: {session_data}")
-        print(f"User role: {session.get('role', 'None')}")
-        print(f"User ID: {session.get('user_id', 'None')}")
-        
         # If no role in session, set as guest
         if not session.get('role'):
             session['role'] = 'guest'
@@ -643,14 +533,12 @@ def send_initial_data_async(client_sid):
 
 @socketio.on("disconnect")
 def handle_disconnect(reason=None):
-    print(f"Client disconnected: {request.sid}, reason: {reason}")
+    pass
 
 
 @socketio.on_error_default
 def default_error_handler(e):
     print(f"Socket.IO error: {e}")
-    import traceback
-    traceback.print_exc()
     return False
 
 
@@ -658,21 +546,15 @@ def default_error_handler(e):
 def handle_queue_add(data):
     """Add track to queue - Host only"""
     try:
-        print(f"Queue add request from {request.sid}")
-        print(f"Request headers: {dict(request.headers)}")
-        
         # Check if session exists and has role
         user_role = session.get("role")
         user_id = session.get("user_id") 
-        print(f"User role from session: {user_role}, User ID: {user_id}")
         
         if not user_role:
-            print("No role found in session - authentication issue")
             emit("error", {"message": "Authentication expired. Please refresh the page and log in again."})
             return
             
         if user_role != "host":
-            print(f"Non-host user attempted to add to queue: {user_role}")
             emit("error", {"message": "Only hosts can add tracks to the queue"})
             return
         
@@ -681,11 +563,8 @@ def handle_queue_add(data):
         track_name = data.get("track_name") if data else None
         
         if not track_uri or not track_name:
-            print(f"Missing track information: uri={track_uri}, name={track_name}")
             emit("error", {"message": "Missing track information"})
             return
-        
-        print(f"Adding track to queue: {track_name} ({track_uri})")
         
         # Persist the new queue item
         db = SessionLocal()
@@ -693,7 +572,6 @@ def handle_queue_add(data):
             qi = QueueItem(track_uri=track_uri, track_name=track_name)
             db.add(qi)
             db.commit()
-            print(f"Track added to database with ID: {qi.id}")
             
             # Broadcast to all clients with timestamp
             socketio.emit(
@@ -704,7 +582,6 @@ def handle_queue_add(data):
                     "timestamp": qi.timestamp.isoformat() if qi.timestamp else None,
                 }
             )
-            print("Queue update broadcasted to all clients")
             
             # Send success confirmation back to the sender
             emit("queue_add_success", {
@@ -721,8 +598,6 @@ def handle_queue_add(data):
             
     except Exception as e:
         print(f"Error in queue_add: {e}")
-        import traceback
-        traceback.print_exc()
         emit("error", {"message": "Failed to add track to queue"})
 
 
@@ -1288,7 +1163,6 @@ def reset_session():
 def clear_session_and_login():
     """Clear session completely and redirect to login with role"""
     requested_role = request.args.get('role', 'host')
-    print(f"Clearing session completely and redirecting to login with role: {requested_role}")
     
     # Clear all session data
     session.clear()
@@ -1305,25 +1179,20 @@ def restart_session():
         host_file = 'current_host.txt'
         if os.path.exists(host_file):
             os.remove(host_file)
-            print("Removed host file")
         
         # Clear the queue, votes, and chat
         db = SessionLocal()
         try:
             # Clear all votes
-            vote_count = db.query(Vote).count()
             db.query(Vote).delete()
             
             # Clear all queue items
-            queue_count = db.query(QueueItem).count()
             db.query(QueueItem).delete()
             
             # Clear all chat messages
-            chat_count = db.query(ChatMessage).count()
             db.query(ChatMessage).delete()
             
             db.commit()
-            print(f"Cleared {vote_count} votes, {queue_count} queue items, {chat_count} chat messages")
             
             # Emit events to all connected clients
             socketio.emit('queue_cleared')
@@ -1336,8 +1205,6 @@ def restart_session():
             print(f"Error clearing data during session restart: {e}")
         finally:
             db.close()
-        
-        print("Session restart completed successfully")
         
         return jsonify({
             "status": "success", 
@@ -1522,8 +1389,6 @@ def manual_token_exchange(auth_code):
     # Try each IP directly - bypass DNS completely by not using hostname
     for ip in ip_addresses:
         try:
-            print(f">>> MANUAL TOKEN EXCHANGE ATTEMPT WITH IP: {ip} <<<")
-            
             # Post directly to the IP, use Host header for TLS
             url = f"https://{ip}/api/token"
             headers = {
@@ -1544,22 +1409,14 @@ def manual_token_exchange(auth_code):
             
             if response.status_code == 200:
                 token_info = response.json()
-                print(f">>> MANUAL TOKEN EXCHANGE SUCCESS WITH IP: {ip} <<<")
-                
                 # Add expiry time for Spotipy compatibility
                 import time
                 token_info['expires_at'] = int(time.time()) + token_info.get('expires_in', 3600)
-                
                 return token_info
-            else:
-                print(f">>> MANUAL TOKEN EXCHANGE FAILED WITH IP {ip}: HTTP {response.status_code} <<<")
                 
         except Exception as e:
-            print(f">>> MANUAL TOKEN EXCHANGE ERROR WITH IP {ip}: {e} <<<")
             continue
     
-    # If all IPs failed
-    print(">>> ALL MANUAL TOKEN EXCHANGE ATTEMPTS FAILED <<<")
     return None
 
 
@@ -1577,47 +1434,36 @@ def manual_token_refresh(refresh_token):
         'client_secret': os.getenv("SPOTIFY_CLIENT_SECRET")
     }
     
-    # Try each IP directly - bypass DNS completely by not using hostname
+    # Try each IP directly - bypass DNS completely
     for ip in ip_addresses:
         try:
-            print(f">>> MANUAL TOKEN REFRESH ATTEMPT WITH IP: {ip} <<<")
-            
             # Post directly to the IP, use Host header for TLS
             url = f"https://{ip}/api/token"
             headers = {
-                'Host': 'accounts.spotify.com',  # For TLS certificate validation
+                'Host': 'accounts.spotify.com',
                 'Content-Type': 'application/x-www-form-urlencoded'
             }
             
-            # Create a custom requests session to avoid DNS caching
             req_session = requests.Session()
             
             response = req_session.post(
                 url,
                 data=token_data,
                 headers=headers,
-                timeout=(3, 3),  # Very short timeout to fail fast
+                timeout=(3, 3),
                 verify=False  # Skip SSL verification since we're using IP
             )
             
             if response.status_code == 200:
                 token_info = response.json()
-                print(f">>> MANUAL TOKEN REFRESH SUCCESS WITH IP: {ip} <<<")
-                
                 # Add expiry time for Spotipy compatibility
                 import time
                 token_info['expires_at'] = int(time.time()) + token_info.get('expires_in', 3600)
-                
                 return token_info
-            else:
-                print(f">>> MANUAL TOKEN REFRESH FAILED WITH IP {ip}: HTTP {response.status_code} <<<")
                 
         except Exception as e:
-            print(f">>> MANUAL TOKEN REFRESH ERROR WITH IP {ip}: {e} <<<")
             continue
     
-    # If all IPs failed
-    print(">>> ALL MANUAL TOKEN REFRESH ATTEMPTS FAILED <<<")
     return None
 
 
@@ -1631,15 +1477,12 @@ def get_spotify_client():
     # Check if token needs refresh
     if spotify_oauth.is_token_expired(token_info):
         try:
-            print(">>> TOKEN EXPIRED - USING FAST IP-BASED REFRESH ONLY <<<")
             # Use ONLY fast IP-based refresh - no Spotipy fallback to avoid delays
             refreshed_token = manual_token_refresh(token_info['refresh_token'])
             if refreshed_token:
                 session["spotify_token"] = refreshed_token
                 token_info = refreshed_token
-                print(">>> FAST TOKEN REFRESH SUCCESSFUL <<<")
             else:
-                print(">>> FAST TOKEN REFRESH FAILED - SESSION INVALID <<<")
                 return None
         except Exception as e:
             print(f"Token refresh failed: {e}")
@@ -1647,154 +1490,7 @@ def get_spotify_client():
     
     return spotipy.Spotify(auth=token_info['access_token'])
 
-
-# Test endpoint to verify Spotipy is configured correctly
-@app.route("/test-spotipy")
-def test_spotipy():
-    try:
-        print(">>> TESTING SPOTIPY CONFIGURATION <<<")
-        auth_url = spotify_oauth.get_authorize_url()
-        print(f">>> SPOTIPY AUTH URL GENERATED: {auth_url[:100]}... <<<")
-        return jsonify({
-            "status": "success",
-            "message": "Spotipy is configured correctly",
-            "auth_url_sample": auth_url[:100] + "..."
-        })
-    except Exception as e:
-        print(f">>> SPOTIPY CONFIGURATION ERROR: {e} <<<")
-        return jsonify({
-            "status": "error",
-            "message": f"Spotipy configuration error: {str(e)}"
-        }), 500
-
-
-# Test endpoint to verify callback logic without full OAuth
-@app.route("/test-callback")
-def test_callback():
-    try:
-        print(">>> TESTING CALLBACK LOGIC <<<")
-        # Test that our callback would work with a sample auth code
-        # This tests everything except the actual token exchange
-        
-        # Simulate callback parameters
-        test_session = {
-            'requested_role': 'host',
-            'initialized': True
-        }
-        
-        print(f">>> TEST SESSION: {test_session} <<<")
-        print(">>> SPOTIPY TOKEN EXCHANGE WOULD HAPPEN HERE <<<")
-        print(">>> CALLBACK LOGIC TEST SUCCESSFUL <<<")
-        
-        return jsonify({
-            "status": "success", 
-            "message": "Callback logic test successful - Spotipy integration ready",
-            "test_session": test_session
-        })
-    except Exception as e:
-        print(f">>> CALLBACK TEST ERROR: {e} <<<")
-        return jsonify({
-            "status": "error",
-            "message": f"Callback test error: {str(e)}"
-        }), 500
-
-
-# Test endpoint for manual token exchange
-@app.route("/test-manual-token-exchange")
-def test_manual_token_exchange():
-    """Test the manual token exchange with a dummy code to verify IP fallback works"""
-    try:
-        print(">>> TESTING MANUAL TOKEN EXCHANGE FUNCTION <<<")
-        
-        # Test with a dummy auth code (this will fail but we can see if our connection method works)
-        dummy_code = "test_auth_code_12345"
-        result = manual_token_exchange(dummy_code)
-        
-        if result:
-            return jsonify({
-                "status": "success",
-                "message": "Manual token exchange succeeded",
-                "token_preview": str(result)[:100] + "..."
-            })
-        else:
-            return jsonify({
-                "status": "expected_failure",
-                "message": "Manual token exchange failed as expected with dummy code, but connection method worked"
-            })
-            
-    except Exception as e:
-        print(f">>> MANUAL TOKEN EXCHANGE TEST ERROR: {e} <<<")
-        return jsonify({
-            "status": "error",
-            "message": f"Test error: {str(e)}"
-        }), 500
-
-
-# Test endpoint to debug playlists after login
-@app.route("/test-playlists-debug")
-def test_playlists_debug():
-    """Debug endpoint to check playlists access after login"""
-    try:
-        # Check session
-        token_info = session.get("spotify_token")
-        user_role = session.get("role")
-        
-        debug_info = {
-            "session_role": user_role,
-            "has_token": bool(token_info),
-            "token_keys": list(token_info.keys()) if token_info else None,
-            "session_keys": list(session.keys())
-        }
-        
-        if not token_info:
-            return jsonify({
-                "status": "error",
-                "message": "No Spotify token in session",
-                "debug": debug_info
-            }), 401
-        
-        # Try to get Spotify client
-        sp = get_spotify_client()
-        if not sp:
-            return jsonify({
-                "status": "error",
-                "message": "Failed to create Spotify client",
-                "debug": debug_info
-            }), 401
-        
-        # Try to get user profile first (simpler call)
-        try:
-            user_profile = sp.current_user()
-            debug_info["user_profile"] = {
-                "id": user_profile.get("id"),
-                "display_name": user_profile.get("display_name")
-            }
-        except Exception as profile_error:
-            debug_info["profile_error"] = str(profile_error)
-        
-        # Try to get playlists
-        try:
-            playlists_data = sp.current_user_playlists(limit=5, offset=0)
-            debug_info["playlists_count"] = len(playlists_data.get("items", []))
-            debug_info["first_playlist"] = playlists_data.get("items", [{}])[0].get("name") if playlists_data.get("items") else None
-            
-            return jsonify({
-                "status": "success",
-                "message": "Playlists access successful",
-                "debug": debug_info
-            })
-            
-        except Exception as playlist_error:
-            debug_info["playlist_error"] = str(playlist_error)
-            return jsonify({
-                "status": "error",
-                "message": f"Playlists access failed: {str(playlist_error)}",
-                "debug": debug_info
-            }), 500
-            
-    except Exception as e:
-        return jsonify({
-            "status": "error",
-            "message": f"Debug test failed: {str(e)}",
-            "debug": {"error": str(e)}
-        }), 500
+# Run the Flask app
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    socketio.run(app, host="0.0.0.0", port=port, debug=False)
