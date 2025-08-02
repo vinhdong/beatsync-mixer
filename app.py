@@ -1381,8 +1381,12 @@ def auto_play_next():
         next_track = next_track_response.get_json()
         track_uri = next_track["track_uri"]
         
-        # Get access token
-        access_token = session.get("access_token")
+        # Get access token from the spotify_token object
+        token_info = session.get("spotify_token")
+        if not token_info:
+            return jsonify({"error": "Not authenticated"}), 401
+            
+        access_token = token_info.get("access_token")
         if not access_token:
             return jsonify({"error": "Not authenticated"}), 401
         
