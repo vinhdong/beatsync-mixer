@@ -408,17 +408,17 @@ def recommend(track_uri):
         print(f"Getting Last.fm recommendations for: {artist} - {title}")
         
         try:
-            # Get similar tracks from Last.fm
-            track = lastfm.get_track(artist, title)
-            similar_tracks = track.get_similar(limit=5)
+            # Use manual Last.fm API to bypass DNS issues
+            recommendations = manual_lastfm_get_similar(
+                artist, 
+                title, 
+                os.getenv("LASTFM_API_KEY"), 
+                limit=5
+            )
             
-            recommendations = []
-            for similar in similar_tracks:
-                recommendations.append({
-                    "artist": similar.item.artist.name,
-                    "title": similar.item.title,
-                    "url": similar.item.get_url()
-                })
+            if recommendations is None:
+                print(f"Manual Last.fm API failed for {artist} - {title}")
+                return jsonify({"error": "Failed to get recommendations from Last.fm"}), 500
             
             print(f"Found {len(recommendations)} recommendations for {artist} - {title}")
             return jsonify({
@@ -452,17 +452,17 @@ def recommend_direct():
     try:
         print(f"Getting Last.fm recommendations for: {artist} - {title}")
         
-        # Get similar tracks from Last.fm
-        track = lastfm.get_track(artist, title)
-        similar_tracks = track.get_similar(limit=5)
+        # Use manual Last.fm API to bypass DNS issues
+        recommendations = manual_lastfm_get_similar(
+            artist, 
+            title, 
+            os.getenv("LASTFM_API_KEY"), 
+            limit=5
+        )
         
-        recommendations = []
-        for similar in similar_tracks:
-            recommendations.append({
-                "artist": similar.item.artist.name,
-                "title": similar.item.title,
-                "url": similar.item.get_url()
-            })
+        if recommendations is None:
+            print(f"Manual Last.fm API failed for {artist} - {title}")
+            return jsonify({"error": "Failed to get recommendations from Last.fm"}), 500
         
         print(f"Found {len(recommendations)} recommendations for {artist} - {title}")
         return jsonify({
@@ -1969,6 +1969,76 @@ def manual_get_playback_state(access_token):
     return None
 
 
+# Manual Last.fm API client to bypass Heroku DNS issues
+def manual_lastfm_get_similar(artist, title, api_key, limit=5):
+    """Manual Last.fm API call using hardcoded IPs as DNS fallback"""
+    
+    # Last.fm API IP addresses (ws.audioscrobbler.com)
+    ip_addresses = ["130.211.19.189"]
+    
+    # Build API parameters
+    import hashlib
+    
+    params = {
+        'method': 'track.getsimilar',
+        'artist': artist,
+        'track': title,
+        'api_key': api_key,
+        'format': 'json',
+        'limit': str(limit)
+    }
+    
+    # Try each IP directly - bypass DNS completely
+    for ip in ip_addresses:
+        try:
+            # Make request directly to IP, use Host header for routing
+            url = f"http://{ip}/2.0/"
+            headers = {
+                'Host': 'ws.audioscrobbler.com',
+                'User-Agent': 'BeatSyncMixer/1.0'
+            }
+            
+            req_session = requests.Session()
+            
+            response = req_session.get(
+                url,
+                params=params,
+                headers=headers,
+                timeout=(5, 10)  # 5s connect, 10s read timeout
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                
+                # Check for Last.fm API errors
+                if 'error' in data:
+                    print(f"Last.fm API error: {data.get('message', 'Unknown error')}")
+                    return None
+                
+                # Parse similar tracks
+                similar_tracks = []
+                tracks = data.get('similartracks', {}).get('track', [])
+                
+                # Handle case where only one similar track is returned (not a list)
+                if isinstance(tracks, dict):
+                    tracks = [tracks]
+                
+                for track in tracks[:limit]:
+                    similar_tracks.append({
+                        'artist': track.get('artist', {}).get('name', 'Unknown Artist'),
+                        'title': track.get('name', 'Unknown Title'),
+                        'url': track.get('url', '#')
+                    })
+                
+                return similar_tracks
+                
+        except Exception as e:
+            print(f"Manual Last.fm API call failed for IP {ip}: {e}")
+            continue
+    
+    return None
+
+
 # Helper function to create Spotipy client from session
 def get_spotify_client():
     """Get a Spotipy client using the token from session"""
@@ -2022,7 +2092,7 @@ def fetch_user_profile():
             
             # Update host file if user is host
             if session.get("role") == "host":
-                host_file = 'current_host.txt'
+                               host_file = 'current_host.txt'
                 if os.path.exists(host_file):
                     with open(host_file, 'w') as f:
                         f.write(f"{session['user_id']}|{session['display_name']}")
