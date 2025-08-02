@@ -493,7 +493,7 @@ def callback():
                 
                 if os.path.exists(host_file):
                     # Someone is already hosting
-                    return redirect("/?error=host_taken")
+                    return redirect("/select-role?error=host_taken")
                 
                 # Set as host and create host file
                 session["role"] = "host"
