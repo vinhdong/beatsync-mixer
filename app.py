@@ -309,21 +309,34 @@ def callback():
             # Ensure the state is properly set in session for this attempt
             if callback_state:
                 state_key = f'_state_spotify_{callback_state}'
+                print(f"Checking state key: {state_key}")
+                print(f"Session keys before state validation: {list(session.keys())}")
+                
                 # Make sure the state key is still valid
                 if state_key in session:
                     state_data = session[state_key]
+                    print(f"Found state data: {state_data}")
                     if isinstance(state_data, dict) and 'exp' in state_data:
                         import time
                         current_time = time.time()
+                        print(f"State expiration check: current={current_time}, exp={state_data['exp']}")
                         if current_time > state_data['exp']:
                             # Extend expiration
                             state_data['exp'] = current_time + 600
                             session[state_key] = state_data
-                            print(f"Extended state expiration for attempt {attempt + 1}")
+                            print(f"Extended state expiration to: {state_data['exp']}")
                     print(f"State key {state_key} validated for attempt {attempt + 1}")
                 else:
-                    print(f"State key {state_key} missing, recreating for attempt {attempt + 1}")
-                    session[state_key] = callback_state
+                    print(f"State key {state_key} not found in session, available keys: {[k for k in session.keys() if '_state_' in k]}")
+                    # Try to find any existing OAuth state and use it
+                    oauth_states = [k for k in session.keys() if k.startswith('_state_spotify_')]
+                    if oauth_states:
+                        existing_state_key = oauth_states[0]
+                        print(f"Found existing OAuth state key: {existing_state_key}, copying to expected key")
+                        session[state_key] = session[existing_state_key]
+                    else:
+                        print(f"No existing OAuth states found, creating new state key")
+                        session[state_key] = callback_state
             
             # Try to get the access token with timeout handling
             token = oauth.spotify.authorize_access_token()
