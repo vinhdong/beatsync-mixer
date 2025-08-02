@@ -7,6 +7,7 @@ from spotipy.oauth2 import SpotifyOAuth
 import requests
 import pylast
 import time
+import threading
 import traceback
 from dotenv import load_dotenv
 from flask import Flask, jsonify, session, redirect, url_for, send_from_directory, abort, request, request
@@ -1387,13 +1388,27 @@ def get_next_track():
         db.close()
 
 
+# Auto-play locking to prevent concurrent requests
+auto_play_lock = threading.Lock()
+last_auto_play_time = 0
+
 @app.route("/queue/auto-play", methods=["POST"])
 def auto_play_next():
     """Automatically play the next track based on voting - Host only"""
+    global last_auto_play_time
+    
     if session.get("role") != "host":
         print("Auto-play denied: User is not host")
         return abort(403)
     
+    # Server-side debounce: prevent multiple auto-play requests within 2 seconds
+    current_time = time.time()
+    with auto_play_lock:
+        if current_time - last_auto_play_time < 2:
+            print(f"Auto-play request blocked by server debounce (last call: {current_time - last_auto_play_time:.2f}s ago)")
+            return jsonify({"error": "Auto-play request too soon"}), 429
+        last_auto_play_time = current_time
+
     print("Auto-play request received from host")
     
     try:
@@ -1429,35 +1444,72 @@ def auto_play_next():
             print("manual_start_playback failed")
             return jsonify({"error": "Failed to start playback"}), 500
         
-        # SUCCESS! Track is now playing - remove it from the queue immediately
+        # SUCCESS! Track is now playing - remove ONLY this specific track from the queue
         print(f"Successfully started playback of {next_track['track_name']}, removing from queue...")
         
-        # Remove the track from the queue and its votes
+        # Remove the track from the queue and its votes with additional safety checks
         db = SessionLocal()
         try:
-            # Find and remove the track
-            item = db.query(QueueItem).filter_by(track_uri=track_uri).first()
+            # Start a transaction to ensure atomicity
+            db.begin()
+            
+            # Count queue items before removal for debugging
+            total_before = db.query(QueueItem).count()
+            print(f"Queue count before removal: {total_before}")
+            
+            # Find and remove ONLY the specific track that was just played
+            # Use a more robust query to ensure we get the exact track
+            item = db.query(QueueItem).filter(
+                QueueItem.track_uri == track_uri
+            ).first()
+            
             if item:
+                track_name = item.track_name  # Store name before deletion
+                track_id = item.id  # Store ID for verification
+                
+                # Double-check this is the track we expect
+                if item.track_uri != track_uri:
+                    print(f"ERROR: Track URI mismatch! Expected {track_uri}, got {item.track_uri}")
+                    db.rollback()
+                    return jsonify({"error": "Track URI mismatch"}), 500
+                
+                # Remove the specific queue item
                 db.delete(item)
-                print(f"Removed {item.track_name} from queue")
+                print(f"Marked '{track_name}' (ID: {track_id}) for deletion from queue")
                 
-                # Also remove associated votes
-                votes_deleted = db.query(Vote).filter_by(track_uri=track_uri).delete()
-                print(f"Removed {votes_deleted} votes for {item.track_name}")
+                # Also remove associated votes for this specific track
+                votes_to_delete = db.query(Vote).filter(Vote.track_uri == track_uri).all()
+                votes_count = len(votes_to_delete)
+                for vote in votes_to_delete:
+                    db.delete(vote)
+                print(f"Marked {votes_count} votes for '{track_name}' for deletion")
                 
+                # Commit the transaction
                 db.commit()
+                print(f"Transaction committed successfully")
+                
+                # Count queue items after removal for debugging
+                total_after = db.query(QueueItem).count()
+                items_removed = total_before - total_after
+                print(f"Queue count after removal: {total_after} (removed {items_removed} items)")
+                
+                if items_removed != 1:
+                    print(f"WARNING: Expected to remove 1 item, but removed {items_removed} items!")
                 
                 # Emit removal event to all clients
                 socketio.emit('track_removed', {
                     'track_uri': track_uri,
-                    'track_name': item.track_name
+                    'track_name': track_name
                 })
-                print(f"Broadcasted track removal: {item.track_name}")
+                print(f"Broadcasted track removal: '{track_name}'")
             else:
                 print(f"Warning: Track {track_uri} not found in queue to remove")
+                db.rollback()
+                
         except Exception as db_error:
             print(f"Error removing track from queue: {db_error}")
             db.rollback()
+            raise db_error
         finally:
             db.close()
         

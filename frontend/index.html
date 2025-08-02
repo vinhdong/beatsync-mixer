@@ -1355,14 +1355,34 @@
       }
     }
 
+    // Auto-play debounce to prevent multiple simultaneous calls
+    let autoPlayInProgress = false;
+    let lastAutoPlayTime = 0;
+
     // Auto-play the most liked track (silent operation)
     async function autoPlayNext() {
-      console.log('autoPlayNext called', { accessToken: !!accessToken, deviceId, userRole: window.userRole });
+      const now = Date.now();
+      console.log('autoPlayNext called', { 
+        accessToken: !!accessToken, 
+        deviceId, 
+        userRole: window.userRole,
+        autoPlayInProgress,
+        timeSinceLastCall: now - lastAutoPlayTime
+      });
+      
+      // Debounce: prevent multiple calls within 2 seconds
+      if (autoPlayInProgress || (now - lastAutoPlayTime) < 2000) {
+        console.log('Auto-play call blocked by debounce');
+        return;
+      }
       
       if (!accessToken || !deviceId) {
         console.log('Spotify player not connected for auto-play');
         return;
       }
+
+      autoPlayInProgress = true;
+      lastAutoPlayTime = now;
 
       try {
         console.log('Sending auto-play request to /queue/auto-play');
@@ -1392,6 +1412,11 @@
         }
       } catch (error) {
         console.error('Error auto-playing track:', error);
+      } finally {
+        // Reset the flag after a delay to allow the next legitimate auto-play
+        setTimeout(() => {
+          autoPlayInProgress = false;
+        }, 1000);
       }
     }
 
