@@ -37,24 +37,8 @@ def select_role():
         </div>
         """
     elif error == 'session_lost':
-        error_message = """
-        <div style="background: #ffe6e6; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #e74c3c; color: #c0392b;">
-            <strong>⚠️ Session Lost</strong><br>
-            Your session was lost during authentication. This can happen due to session storage issues.<br><br>
-            <strong>Please try:</strong><br>
-            1. Clear your browser cookies and try again<br>
-            2. Use the "Clear Session & Try Again" buttons below<br>
-            3. If this persists, try a different browser
-        </div>
-        <div style="text-align: center; margin-bottom: 20px;">
-            <a href="/clear-session-and-login?role=host" style="background-color: #e74c3c; color: white; padding: 12px 24px; text-decoration: none; border-radius: 25px; font-weight: bold; display: inline-block; margin: 5px;">
-                🔄 Clear Session & Try Host Again
-            </a>
-            <a href="/clear-session-and-login?role=listener" style="background-color: #666; color: white; padding: 12px 24px; text-decoration: none; border-radius: 25px; font-weight: bold; display: inline-block; margin: 5px;">
-                🔄 Clear Session & Try Listener
-            </a>
-        </div>
-        """
+        # Remove the session lost message as requested
+        error_message = ""
     elif error == 'invalid_role':
         error_message = """
         <div style="background: #ffe6e6; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #e74c3c; color: #c0392b;">
@@ -75,16 +59,8 @@ def select_role():
             <strong>⚠️ Session Security Error</strong><br>
             Your session expired during authentication. This commonly happens after restarting the session.<br><br>
             <strong>Please try:</strong><br>
-            1. Click "Clear Session & Try Again" below<br>
+            1. Refresh the page and try again<br>
             2. If it keeps failing, clear your browser cookies and try again
-        </div>
-        <div style="text-align: center; margin-bottom: 20px;">
-            <a href="/clear-session-and-login?role=host" style="background-color: #e74c3c; color: white; padding: 12px 24px; text-decoration: none; border-radius: 25px; font-weight: bold; display: inline-block; margin: 5px;">
-                🔄 Clear Session & Try Host Again
-            </a>
-            <a href="/clear-session-and-login?role=listener" style="background-color: #666; color: white; padding: 12px 24px; text-decoration: none; border-radius: 25px; font-weight: bold; display: inline-block; margin: 5px;">
-                🔄 Clear Session & Try Listener
-            </a>
         </div>
         """
     elif error == 'oauth_failed':
@@ -376,17 +352,6 @@ def reset_session():
     """Reset user session and redirect to role selection"""
     session.clear()
     return redirect("/select-role")
-
-
-@session_mgmt_bp.route("/clear-session-and-login")
-def clear_session_and_login():
-    """Clear session completely and redirect to login with role"""
-    requested_role = request.args.get('role', 'host')
-    
-    # Clear all session data
-    session.clear()
-    
-    return redirect(f"/login?role={requested_role}")
 
 
 @session_mgmt_bp.route("/restart-session", methods=["POST"])
