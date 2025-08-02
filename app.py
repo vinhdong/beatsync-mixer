@@ -1503,6 +1503,26 @@ def get_spotify_client():
     return spotipy.Spotify(auth=token_info['access_token'])
 
 
+# Test endpoint to verify Spotipy is configured correctly
+@app.route("/test-spotipy")
+def test_spotipy():
+    try:
+        print(">>> TESTING SPOTIPY CONFIGURATION <<<")
+        auth_url = spotify_oauth.get_authorize_url()
+        print(f">>> SPOTIPY AUTH URL GENERATED: {auth_url[:100]}... <<<")
+        return jsonify({
+            "status": "success",
+            "message": "Spotipy is configured correctly",
+            "auth_url_sample": auth_url[:100] + "..."
+        })
+    except Exception as e:
+        print(f">>> SPOTIPY CONFIGURATION ERROR: {e} <<<")
+        return jsonify({
+            "status": "error",
+            "message": f"Spotipy configuration error: {str(e)}"
+        }), 500
+
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     socketio.run(app, host="0.0.0.0", port=port, debug=False, allow_unsafe_werkzeug=True)
