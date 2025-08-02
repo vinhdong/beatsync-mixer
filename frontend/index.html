@@ -1152,6 +1152,16 @@
           
           if ((songEnded || stoppedNearEnd) && window.userRole === 'host') {
             console.log('Song ended, auto-playing next track...');
+            console.log('Track end detection details:', {
+              songEnded,
+              stoppedNearEnd,
+              wasPlaying,
+              isPlaying,
+              previousPosition,
+              currentPosition,
+              nearEnd,
+              userRole: window.userRole
+            });
             setTimeout(() => {
               autoPlayNext();
             }, 1000);
@@ -1347,12 +1357,15 @@
 
     // Auto-play the most liked track (silent operation)
     async function autoPlayNext() {
+      console.log('autoPlayNext called', { accessToken: !!accessToken, deviceId, userRole: window.userRole });
+      
       if (!accessToken || !deviceId) {
         console.log('Spotify player not connected for auto-play');
         return;
       }
 
       try {
+        console.log('Sending auto-play request to /queue/auto-play');
         const response = await fetch('/queue/auto-play', {
           method: 'POST',
           headers: {
@@ -1361,9 +1374,11 @@
           body: JSON.stringify({ device_id: deviceId })
         });
 
+        console.log('Auto-play response status:', response.status);
+        
         if (response.ok) {
           const result = await response.json();
-          console.log(`Auto-played: ${result.message}`);
+          console.log(`Auto-played: ${result.message}`, result);
           
           // Show a subtle notification in the connection status
           updateConnectionStatus(`🎵 Auto-playing: ${result.track.track_name}`);
@@ -1373,6 +1388,7 @@
         } else {
           const error = await response.json();
           console.log('No suitable tracks for auto-play:', error.error);
+          console.log('Full error response:', error);
         }
       } catch (error) {
         console.error('Error auto-playing track:', error);

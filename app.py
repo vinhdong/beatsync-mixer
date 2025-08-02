@@ -1369,35 +1369,45 @@ def get_next_track():
 def auto_play_next():
     """Automatically play the next track based on voting - Host only"""
     if session.get("role") != "host":
+        print("Auto-play denied: User is not host")
         return abort(403)
+    
+    print("Auto-play request received from host")
     
     try:
         # Get the next track based on voting
         next_track_response = get_next_track()
         
         if next_track_response.status_code != 200:
+            print(f"No next track available: {next_track_response.status_code}")
             return next_track_response
         
         next_track = next_track_response.get_json()
         track_uri = next_track["track_uri"]
+        print(f"Next track to play: {next_track['track_name']} ({track_uri})")
         
         # Get access token from the spotify_token object
         token_info = session.get("spotify_token")
         if not token_info:
+            print("No spotify_token in session")
             return jsonify({"error": "Not authenticated"}), 401
             
         access_token = token_info.get("access_token")
         if not access_token:
+            print("No access_token in spotify_token")
             return jsonify({"error": "Not authenticated"}), 401
         
         data = request.json or {}
         device_id = data.get("device_id")
+        print(f"Playing on device: {device_id}")
         
         # Play the track using manual IP-based request
         success = manual_start_playback(access_token, device_id, [track_uri])
         if not success:
+            print("manual_start_playback failed")
             return jsonify({"error": "Failed to start playback"}), 500
         
+        print(f"Successfully started playback of {next_track['track_name']}")
         return jsonify({
             "status": "success", 
             "track": next_track,
@@ -1405,6 +1415,7 @@ def auto_play_next():
         })
         
     except Exception as e:
+        print(f"Error in auto_play_next: {e}")
         return jsonify({"error": str(e)}), 500
 
 
