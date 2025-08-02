@@ -777,15 +777,34 @@ def clear_queue():
     """Clear all items from the queue - Host only"""
     # Check if user is authenticated and has host role
     if session.get("role") != "host":
-        return abort(403)
+        return jsonify({"error": "Only hosts can clear the queue", "required_role": "host", "current_role": session.get("role")}), 403
     
     db = SessionLocal()
     try:
+        # Count items before deletion for feedback
+        item_count = db.query(QueueItem).count()
+        
+        # Clear queue items
         db.query(QueueItem).delete()
+        
+        # Also clear votes for queue items
+        db.query(Vote).delete()
+        
         db.commit()
+        
         # Broadcast queue clear to all clients
         socketio.emit("queue_cleared")
-        return jsonify({"status": "success", "message": "Queue cleared"})
+        socketio.emit("votes_cleared")
+        
+        return jsonify({
+            "status": "success", 
+            "message": f"Queue cleared successfully. Removed {item_count} items.",
+            "items_removed": item_count
+        })
+    except Exception as e:
+        db.rollback()
+        print(f"Error clearing queue: {e}")
+        return jsonify({"error": "Database error while clearing queue"}), 500
     finally:
         db.close()
 

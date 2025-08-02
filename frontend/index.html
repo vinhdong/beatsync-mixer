@@ -1050,7 +1050,9 @@
     async function initializeSpotifyPlayer() {
       try {
         // Get access token from backend
-        const tokenResponse = await fetch('/spotify-token');
+        const tokenResponse = await fetch('/spotify-token', {
+          credentials: 'include'
+        });
         if (!tokenResponse.ok) {
           updateConnectionStatus('🔴 Not authenticated');
           console.log('User not authenticated with Spotify');
@@ -1340,6 +1342,7 @@
       try {
         const response = await fetch(`/queue/remove/${encodeURIComponent(trackUri)}`, {
           method: 'POST',
+          credentials: 'include',
           headers: {
             'Content-Type': 'application/json'
           }
@@ -1388,6 +1391,7 @@
         console.log('Sending auto-play request to /queue/auto-play');
         const response = await fetch('/queue/auto-play', {
           method: 'POST',
+          credentials: 'include',
           headers: {
             'Content-Type': 'application/json'
           },
@@ -1430,6 +1434,7 @@
       try {
         const response = await fetch('/playback/play', {
           method: 'POST',
+          credentials: 'include',
           headers: {
             'Content-Type': 'application/json'
           },
@@ -1559,6 +1564,7 @@
         try {
           const response = await fetch('/restart-session', {
             method: 'POST',
+            credentials: 'include',
             headers: {
               'Content-Type': 'application/json'
             }
@@ -1949,15 +1955,28 @@
     async function clearQueue() {
       if (confirm('Are you sure you want to clear the entire queue?')) {
         try {
-          const response = await fetch('/queue/clear', { method: 'POST' });
+          const response = await fetch('/queue/clear', { 
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+              'Content-Type': 'application/json'
+            }
+          });
           if (response.ok) {
             // The socket event will handle UI update
+            console.log('Queue cleared successfully');
           } else {
-            alert('Failed to clear queue');
+            const errorText = await response.text();
+            console.error('Failed to clear queue:', response.status, errorText);
+            if (response.status === 403) {
+              alert('Only hosts can clear the queue. Please make sure you are logged in as a host.');
+            } else {
+              alert('Failed to clear queue: ' + response.status);
+            }
           }
         } catch (err) {
           console.error('Error clearing queue:', err);
-          alert('Error clearing queue');
+          alert('Error clearing queue: ' + err.message);
         }
       }
     }
@@ -1968,7 +1987,9 @@
         const playlistList = document.getElementById('playlist-list');
         playlistList.innerHTML = '<div style="text-align: center; padding: 20px; color: #666;"><div class="loading-spinner"></div> Loading playlists...</div>';
         
-        const res = await fetch('/playlists');
+        const res = await fetch('/playlists', {
+          credentials: 'include'
+        });
         if (res.redirected) {
           document.getElementById('login').style.display = 'block';
           return;
@@ -2066,7 +2087,9 @@
       }
       
       // Debug session info before attempting to queue
-      fetch('/session-info')
+      fetch('/session-info', {
+        credentials: 'include'
+      })
         .then(response => response.json())
         .then(sessionData => {
           console.log('Current session data:', sessionData);
@@ -2090,7 +2113,9 @@
         const trackList = document.getElementById('track-list');
         trackList.innerHTML = '<div style="text-align: center; padding: 20px; color: #666;"><div class="loading-spinner"></div> Loading tracks...</div>';
         
-        const res = await fetch(`/playlists/${playlistId}/tracks`);
+        const res = await fetch(`/playlists/${playlistId}/tracks`, {
+          credentials: 'include'
+        });
         if (res.redirected) {
           window.location = res.url;
           return;
