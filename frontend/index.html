@@ -2079,7 +2079,12 @@
         clearBtn.style.display = "none";
       } else {
         queueEmpty.style.display = "none";
-        clearBtn.style.display = "inline-block";
+        // Only show clear button for hosts
+        if (window.userRole === 'host') {
+          clearBtn.style.display = "inline-block";
+        } else {
+          clearBtn.style.display = "none";
+        }
       }
     }
 
@@ -2472,15 +2477,9 @@
             const btn = document.createElement('button');
             
             // Show appropriate button based on role
-            if (window.userRole === 'host') {
+            if (window.userRole === 'host' || window.userRole === 'listener') {
               btn.textContent = 'Add to Queue';
               btn.onclick = () => queueTrack(t.uri, `${t.name} - ${t.artists.map(a => a.name).join(', ')}`);
-              li.appendChild(btn);
-            } else if (window.userRole === 'listener') {
-              btn.disabled = true;
-              btn.textContent = 'Host Only';
-              btn.style.opacity = '0.5';
-              btn.title = 'Only the host can add tracks to the queue';
               li.appendChild(btn);
             } else {
               // Guests get a different message
@@ -2552,6 +2551,18 @@
       // Initialize role-based UI
       console.log('Page loaded, initializing role-based UI...');
       initializeRoleBasedUI();
+      
+      // Additional explicit UI fixes for listeners
+      if (window.userRole === 'listener') {
+        console.log('Applying additional listener UI fixes...');
+        setTimeout(() => {
+          const clearQueueBtn = document.getElementById('clear-queue-btn');
+          if (clearQueueBtn) {
+            clearQueueBtn.style.display = 'none';
+            console.log('Clear queue button hidden for listener');
+          }
+        }, 100);
+      }
       
       // Fetch user profile if logged in (not guest or listener without Spotify)
       if (window.userRole === 'host') {
