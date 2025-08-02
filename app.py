@@ -85,12 +85,26 @@ def resolve_spotify_ips():
             except Exception as e:
                 print(f"Failed to resolve {hostname}: {e}")
         
+        # If DNS resolution completely failed, use known Spotify IP ranges as fallback
+        if not resolved_ips:
+            print("DNS resolution failed completely, using fallback IPs")
+            # These are known Spotify API server IPs (may change, but better than nothing)
+            fallback_ips = [
+                '35.186.224.24',  # accounts.spotify.com observed IP
+                '35.186.224.25',  # Common Spotify API server
+                '34.102.136.180', # Another common Spotify API server
+            ]
+            resolved_ips = fallback_ips
+            print(f"Using fallback IPs: {fallback_ips}")
+        
         SPOTIFY_IPS = resolved_ips
         print(f"Pre-resolved Spotify IPs: {SPOTIFY_IPS}")
         return len(SPOTIFY_IPS) > 0
     except Exception as e:
         print(f"Failed to pre-resolve Spotify IPs: {e}")
-        return False
+        # Even if this fails, provide basic fallback
+        SPOTIFY_IPS = ['35.186.224.24']
+        return True
 
 # Configure requests session with aggressive retry and timeout handling for Heroku
 def create_spotify_session():
@@ -159,46 +173,104 @@ def exchange_token_with_fallback(auth_code, redirect_uri):
         'User-Agent': 'BeatSync-Mixer/1.0'
     }
     
-    # Try normal hostname first
+    # Create session optimized for Heroku
     session = create_spotify_session()
+    
+    # Build list of URLs to try - start with hostname, then IPs
     urls_to_try = ['https://accounts.spotify.com/api/token']
     
-    # Add IP-based URLs as fallbacks if we have resolved IPs
+    # Add IP-based URLs as fallbacks
     for ip in SPOTIFY_IPS:
         urls_to_try.append(f'https://{ip}/api/token')
     
-    for url in urls_to_try:
+    last_error = None
+    
+    for i, url in enumerate(urls_to_try):
         try:
-            print(f"Attempting token exchange with URL: {url}")
+            print(f"Attempt {i+1}/{len(urls_to_try)}: Trying token exchange with {url}")
             
-            # For IP-based URLs, add Host header
+            # For IP-based URLs, add Host header for SSL verification
             request_headers = headers.copy()
             if ip_address_pattern(url):
                 request_headers['Host'] = 'accounts.spotify.com'
+                print(f"Using Host header for IP-based request")
             
             response = session.post(
                 url,
                 data=token_data,
                 headers=request_headers,
-                timeout=(5, 15),
+                timeout=(10, 20),  # Longer timeout for token exchange
                 verify=True  # Keep SSL verification
             )
             
             print(f"Response status: {response.status_code}")
             
             if response.status_code == 200:
-                print("Token exchange successful!")
+                print(f"Token exchange successful with {url}!")
                 return response.json()
             else:
                 print(f"Token exchange failed with status {response.status_code}: {response.text}")
+                last_error = f"HTTP {response.status_code}: {response.text}"
                 continue
                 
         except Exception as e:
             print(f"Token exchange failed with {url}: {str(e)}")
+            last_error = str(e)
             continue
     
     # If all attempts failed
-    raise Exception("All token exchange attempts failed")
+    raise Exception(f"All token exchange attempts failed. Last error: {last_error}")
+
+def simple_token_exchange_bypass_dns(auth_code, redirect_uri):
+    """Simple token exchange that bypasses DNS completely using known IP"""
+    import requests
+    import base64
+    
+    client_id = os.getenv("SPOTIFY_CLIENT_ID")
+    client_secret = os.getenv("SPOTIFY_CLIENT_SECRET")
+    
+    # Use the most recently observed working IP for accounts.spotify.com
+    spotify_ip = '35.186.224.24'  # This was working in our tests
+    
+    # Prepare token exchange data
+    token_data = {
+        'grant_type': 'authorization_code',
+        'code': auth_code,
+        'redirect_uri': redirect_uri
+    }
+    
+    # Prepare authorization header
+    auth_string = f"{client_id}:{client_secret}"
+    auth_bytes = auth_string.encode('utf-8')
+    auth_b64 = base64.b64encode(auth_bytes).decode('utf-8')
+    
+    headers = {
+        'Authorization': f'Basic {auth_b64}',
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Host': 'accounts.spotify.com',  # Required for SSL verification
+        'User-Agent': 'BeatSync-Mixer/1.0'
+    }
+    
+    url = f'https://{spotify_ip}/api/token'
+    
+    print(f"Direct IP token exchange with {url}")
+    
+    response = requests.post(
+        url,
+        data=token_data,
+        headers=headers,
+        timeout=(15, 30),
+        verify=True  # SSL verification should work with Host header
+    )
+    
+    print(f"Direct IP response status: {response.status_code}")
+    
+    if response.status_code == 200:
+        print("Direct IP token exchange successful!")
+        return response.json()
+    else:
+        print(f"Direct IP token exchange failed: {response.status_code} - {response.text}")
+        raise Exception(f"Direct IP token exchange failed: {response.status_code} - {response.text}")
 
 def ip_address_pattern(url):
     """Check if URL contains an IP address instead of hostname"""
@@ -475,13 +547,21 @@ def callback():
         
         print(f"Received authorization code, exchanging for token...")
         
-        # Use the robust token exchange function with IP fallbacks
+        # Try the robust token exchange function with IP fallbacks first
         try:
             token = exchange_token_with_fallback(code, os.getenv("SPOTIFY_REDIRECT_URI"))
             print("Successfully obtained Spotify access token with fallback method")
         except Exception as e:
-            print(f"All token exchange attempts failed: {e}")
-            return redirect("/select-role?error=oauth_failed")
+            print(f"Fallback token exchange failed: {e}")
+            print("Attempting direct IP bypass method...")
+            
+            # If that fails, try the simple DNS bypass method
+            try:
+                token = simple_token_exchange_bypass_dns(code, os.getenv("SPOTIFY_REDIRECT_URI"))
+                print("Successfully obtained Spotify access token with DNS bypass")
+            except Exception as e2:
+                print(f"DNS bypass token exchange also failed: {e2}")
+                return redirect("/select-role?error=oauth_failed")
         
         # Store token in session
         session["spotify_token"] = token
