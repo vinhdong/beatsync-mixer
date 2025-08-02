@@ -373,57 +373,71 @@ def playlist_tracks(playlist_id):
 @app.route("/recommend/<track_uri>")
 def recommend(track_uri):
     """Get similar tracks from Last.fm for a queued track"""
-    # Get access token from session
-    token_info = session.get("spotify_token")
-    if not token_info:
-        return jsonify({"error": "Not authenticated"}), 401
     
-    access_token = token_info.get("access_token")
-    if not access_token:
-        return jsonify({"error": "Not authenticated"}), 401
+    # Check for manual artist/title parameters first (fallback method)
+    manual_artist = request.args.get('artist')
+    manual_title = request.args.get('title')
     
-    try:
-        # Extract track ID from URI (spotify:track:XXXXX)
-        if not track_uri.startswith("spotify:track:"):
-            return jsonify({"error": "Invalid Spotify track URI"}), 400
+    if manual_artist and manual_title:
+        # Use manually provided artist and title (no Spotify API needed)
+        artist = manual_artist
+        title = manual_title
+        print(f"Using manual parameters - Getting Last.fm recommendations for: {artist} - {title}")
+    else:
+        # Original method: fetch from Spotify API (requires authentication)
+        token_info = session.get("spotify_token")
+        if not token_info:
+            return jsonify({"error": "Not authenticated - please login or provide artist and title parameters"}), 401
         
-        track_id = track_uri.split(":")[-1]
-        
-        # Get track info from Spotify using manual IP-based API
-        track_data = manual_get_track_info(access_token, track_id)
-        if not track_data:
-            return jsonify({"error": "Failed to fetch track info from Spotify"}), 500
-        
-        artist = track_data["artists"][0]["name"]
-        title = track_data["name"]
-        print(f"Getting Last.fm recommendations for: {artist} - {title}")
+        access_token = token_info.get("access_token")
+        if not access_token:
+            return jsonify({"error": "Not authenticated - please login or provide artist and title parameters"}), 401
         
         try:
-            # Get similar tracks from Last.fm
-            track = lastfm.get_track(artist, title)
-            similar_tracks = track.get_similar(limit=5)
+            # Extract track ID from URI (spotify:track:XXXXX)
+            if not track_uri.startswith("spotify:track:"):
+                return jsonify({"error": "Invalid Spotify track URI"}), 400
             
-            recommendations = []
-            for similar in similar_tracks:
-                recommendations.append({
-                    "artist": similar.item.artist.name,
-                    "title": similar.item.title,
-                    "url": similar.item.get_url()
-                })
+            track_id = track_uri.split(":")[-1]
             
-            print(f"Found {len(recommendations)} recommendations for {artist} - {title}")
-            return jsonify({"recommendations": recommendations})
+            # Get track info from Spotify using manual IP-based API
+            track_data = manual_get_track_info(access_token, track_id)
+            if not track_data:
+                return jsonify({"error": "Failed to fetch track info from Spotify - try providing artist and title parameters"}), 500
             
-        except pylast.PyLastError as e:
-            print(f"Last.fm API error for {artist} - {title}: {str(e)}")
-            return jsonify({"error": f"Last.fm API error: {str(e)}"}), 500
+            artist = track_data["artists"][0]["name"]
+            title = track_data["name"]
+            print(f"Getting Last.fm recommendations for: {artist} - {title}")
+            
         except Exception as e:
-            print(f"Unexpected error for {artist} - {title}: {str(e)}")
-            return jsonify({"error": f"Unexpected error: {str(e)}"}), 500
-            
+            print(f"Error fetching from Spotify: {str(e)}")
+            return jsonify({"error": f"Failed to get track info from Spotify: {str(e)}"}), 500
+    
+    # Get similar tracks from Last.fm (works for both methods)
+    try:
+        track = lastfm.get_track(artist, title)
+        similar_tracks = track.get_similar(limit=5)
+        
+        recommendations = []
+        for similar in similar_tracks:
+            recommendations.append({
+                "artist": similar.item.artist.name,
+                "title": similar.item.title,
+                "url": similar.item.get_url()
+            })
+        
+        print(f"Found {len(recommendations)} recommendations for {artist} - {title}")
+        return jsonify({
+            "recommendations": recommendations,
+            "source_track": {"artist": artist, "title": title}
+        })
+        
+    except pylast.PyLastError as e:
+        print(f"Last.fm API error for {artist} - {title}: {str(e)}")
+        return jsonify({"error": f"Last.fm API error: {str(e)}"}), 500
     except Exception as e:
-        print(f"Error in recommend route: {str(e)}")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        print(f"Unexpected Last.fm error for {artist} - {title}: {str(e)}")
+        return jsonify({"error": f"Unexpected error: {str(e)}"}), 500
 
 
 # Serve front-end
