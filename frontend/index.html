@@ -2644,10 +2644,12 @@
         return;
       }
       
-      // Show loading state
-      btn.textContent = 'Loading...';
-      btn.disabled = true;
+      // Show container instantly with loading message
+      recsContainer.innerHTML = '<div class="recommendation-item" style="color: #666; padding: 10px; text-align: center;">⏳ Loading recommendations...</div>';
+      recsContainer.classList.add('visible');
+      btn.textContent = 'Hide Similar Tracks';
       
+      // Load recommendations in background
       try {
         const response = await fetch(`/recommend/${encodeURIComponent(trackUri)}`);
         
@@ -2657,8 +2659,6 @@
         
         const data = await response.json();
         const recommendations = data.recommendations || [];
-        
-        console.log('Recommendations response:', data);
         
         if (recommendations.length === 0) {
           const message = data.message || 'No similar tracks found for this song.';
@@ -2674,16 +2674,9 @@
           `).join('');
         }
         
-        recsContainer.classList.add('visible');
-        btn.textContent = 'Hide Similar Tracks';
-        
       } catch (error) {
         console.error('Error loading recommendations:', error);
-        recsContainer.innerHTML = '<div class="recommendation-item" style="color: #e74c3c;">Error loading recommendations. Please try again.</div>';
-        recsContainer.classList.add('visible');
-        btn.textContent = 'See Similar Tracks';
-      } finally {
-        btn.disabled = false;
+        recsContainer.innerHTML = '<div class="recommendation-item" style="color: #e74c3c; padding: 10px; text-align: center;">Error loading recommendations. Please try again.</div>';
       }
     }
 
