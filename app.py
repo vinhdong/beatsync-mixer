@@ -16,10 +16,12 @@ load_dotenv()
 app = Flask(__name__, static_folder="frontend", static_url_path="")
 app.config["SECRET_KEY"] = os.getenv("FLASK_SECRET")
 
-# Configure session for production
+# Configure session for production with better persistence
 app.config['SESSION_COOKIE_SECURE'] = True if os.getenv('FLASK_ENV') == 'production' else False
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['PERMANENT_SESSION_LIFETIME'] = datetime.timedelta(hours=24)  # 24 hour sessions
+app.config['SESSION_REFRESH_EACH_REQUEST'] = True  # Refresh session on each request
 
 # Configure caching
 app.config['CACHE_TYPE'] = 'SimpleCache'  # In-memory cache for development
@@ -92,6 +94,39 @@ class ChatMessage(Base):
 
 # Create tables if they don't exist
 Base.metadata.create_all(engine)
+
+
+# Session management middleware
+@app.before_request
+def ensure_session():
+    """Ensure session is valid and handle session persistence issues"""
+    try:
+        # Make session permanent to extend lifetime
+        session.permanent = True
+        
+        # Initialize session for new users if needed
+        if not session.get('initialized'):
+            session['initialized'] = True
+            session['created_at'] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            
+        # Handle Socket.IO requests differently
+        if request.path.startswith('/socket.io/'):
+            return
+            
+        # Ensure all users have a role (fallback for lost sessions)
+        if not session.get('role') and request.endpoint not in ['health', 'session_info', 'login', 'callback']:
+            session['role'] = 'guest'
+            session['user_id'] = f"guest_{datetime.datetime.now().timestamp()}"
+            session['display_name'] = 'Guest'
+            
+    except Exception as e:
+        print(f"Session initialization error: {e}")
+        # Reset session on error
+        session.clear()
+        session['role'] = 'guest'
+        session['user_id'] = f"guest_{datetime.datetime.now().timestamp()}"
+        session['display_name'] = 'Guest'
+        session['initialized'] = True
 
 
 # Health check
@@ -373,44 +408,78 @@ def index():
     return html_content
 
 
-# Socket.IO setup with production optimizations
+# Socket.IO setup with production optimizations for Heroku
 socketio = SocketIO(
     app, 
     cors_allowed_origins="*", 
-    ping_timeout=60,
-    ping_interval=25,
+    ping_timeout=120,  # Increased timeout for slower connections
+    ping_interval=30,  # More frequent pings
     max_http_buffer_size=16384,
-    allow_upgrades=True,
-    transports=['polling', 'websocket'],
+    allow_upgrades=False,  # Disable websocket upgrades for Heroku stability
+    transports=['polling'],  # Use only polling transport for better reliability
     manage_session=False,  # Let Flask handle sessions
-    cookie=False  # Disable Socket.IO's own cookies to rely on Flask session
+    cookie=False,  # Disable Socket.IO's own cookies to rely on Flask session
+    engineio_logger=False,  # Disable verbose logging
+    logger=False,  # Disable verbose logging
+    async_mode='threading'  # Use threading mode for better Heroku compatibility
 )
 
 
 @socketio.on("connect")
 def handle_connect(auth):
     print(f"Client connected: {request.sid}")
-    print(f"Session data on connect: {dict(session)}")
-    print(f"User role: {session.get('role', 'None')}")
-    print(f"User ID: {session.get('user_id', 'None')}")
     
+    # Check if session is valid
+    try:
+        session_data = dict(session)
+        print(f"Session data on connect: {session_data}")
+        print(f"User role: {session.get('role', 'None')}")
+        print(f"User ID: {session.get('user_id', 'None')}")
+        
+        # If no role in session, set as guest
+        if not session.get('role'):
+            session['role'] = 'guest'
+            session['user_id'] = f"guest_{request.sid[:8]}"
+            session['display_name'] = 'Guest'
+            
+    except Exception as e:
+        print(f"Session error on connect: {e}")
+        # Fallback session setup
+        session['role'] = 'guest'
+        session['user_id'] = f"guest_{request.sid[:8]}"
+        session['display_name'] = 'Guest'
+    
+    # Send initial data in smaller chunks to avoid timeouts
+    try:
+        emit("connection_established", {"status": "connected", "sid": request.sid})
+        
+        # Send data asynchronously to avoid blocking
+        socketio.start_background_task(send_initial_data_async, request.sid)
+        
+    except Exception as e:
+        print(f"Error in connect handler: {e}")
+        emit("error", {"message": "Connection error occurred"})
+
+def send_initial_data_async(client_sid):
+    """Send initial data asynchronously to avoid blocking the connection"""
     try:
         db = SessionLocal()
         try:
-            # Send existing queued items
-            items = db.query(QueueItem).order_by(QueueItem.timestamp).all()
+            # Send existing queued items (limit to prevent timeout)
+            items = db.query(QueueItem).order_by(QueueItem.timestamp).limit(20).all()
             for item in items:
-                emit(
+                socketio.emit(
                     "queue_updated",
                     {
                         "track_uri": item.track_uri,
                         "track_name": item.track_name,
                         "timestamp": item.timestamp.isoformat() if item.timestamp else None,
                     },
+                    room=client_sid
                 )
 
-            # Send existing votes
-            votes = db.query(Vote).all()
+            # Send existing votes (limit to prevent timeout)
+            votes = db.query(Vote).limit(50).all()
             vote_counts = {}
             for vote in votes:
                 if vote.track_uri not in vote_counts:
@@ -418,27 +487,32 @@ def handle_connect(auth):
                 vote_counts[vote.track_uri][vote.vote_type] += 1
 
             for track_uri, counts in vote_counts.items():
-                emit(
+                socketio.emit(
                     "vote_updated",
                     {"track_uri": track_uri, "up_votes": counts["up"], "down_votes": counts["down"]},
+                    room=client_sid
                 )
 
-            # Send existing chat messages
-            messages = db.query(ChatMessage).order_by(ChatMessage.timestamp).limit(50).all()
-            for msg in messages:
-                emit(
+            # Send recent chat messages (limit to 20 to prevent timeout)
+            messages = db.query(ChatMessage).order_by(ChatMessage.timestamp.desc()).limit(20).all()
+            for msg in reversed(messages):  # Reverse to show in chronological order
+                socketio.emit(
                     "chat_message",
                     {
                         "user": msg.user,
                         "message": msg.message,
                         "timestamp": msg.timestamp.isoformat() if msg.timestamp else None,
                     },
+                    room=client_sid
                 )
+                
+            socketio.emit("initial_data_complete", {"status": "complete"}, room=client_sid)
+                
         finally:
             db.close()
     except Exception as e:
-        print(f"Error in connect handler: {e}")
-        emit("error", {"message": "Connection error occurred"})
+        print(f"Error sending initial data: {e}")
+        socketio.emit("error", {"message": "Error loading initial data"}, room=client_sid)
 
 
 @socketio.on("disconnect")
@@ -1225,7 +1299,7 @@ def auto_play_next():
             return next_track_response
         
         next_track = next_track_response.get_json()
-        track_uri = next_track["track_uri"]
+        track_uri = next_track["track_uri"];
         
         # Play the track
         token = session.get("spotify_token")
