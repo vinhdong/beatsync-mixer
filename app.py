@@ -1328,17 +1328,22 @@ def transfer_playback():
 
 @app.route("/queue/next-track")
 def get_next_track():
-    """Get the next track to play based on voting system"""
+    """Get the next track to play - ALL tracks in queue are eligible regardless of votes"""
     db = SessionLocal()
     try:
-        # Get all queue items with their votes
+        # Get all queue items ordered by timestamp (FIFO - first in, first out)
+        # But we'll still consider votes for ordering among tracks added around the same time
         queue_items = db.query(QueueItem).order_by(QueueItem.timestamp).all()
         
         if not queue_items:
             return jsonify({"error": "Queue is empty"}), 404
         
+        # NEW LOGIC: All tracks are eligible, but votes affect order preference
+        # We'll still prioritize higher voted tracks, but never skip any track
+        
         best_track = None
         best_score = -999  # Start with very low score
+        fallback_track = None  # Always have a fallback (oldest track)
         
         for item in queue_items:
             # Get vote counts for this track
@@ -1349,26 +1354,34 @@ def get_next_track():
             # Calculate net score (likes - dislikes)
             net_score = up_votes - down_votes
             
-            # Skip tracks with more dislikes than likes
-            if down_votes > up_votes:
-                continue
+            track_data = {
+                "track_uri": item.track_uri,
+                "track_name": item.track_name,
+                "up_votes": up_votes,
+                "down_votes": down_votes,
+                "net_score": net_score
+            }
             
-            # Find the track with the highest net score
+            # Set fallback to the first (oldest) track if not set
+            if fallback_track is None:
+                fallback_track = track_data
+            
+            # Find the track with the highest net score, but don't exclude any
             if net_score > best_score:
                 best_score = net_score
-                best_track = {
-                    "track_uri": item.track_uri,
-                    "track_name": item.track_name,
-                    "up_votes": up_votes,
-                    "down_votes": down_votes,
-                    "net_score": net_score
-                }
-        if best_track:
-            return jsonify(best_track)
+                best_track = track_data
+        
+        # Return the best voted track, or fallback to oldest if all have same/negative scores
+        result_track = best_track if best_track else fallback_track
+        
+        if result_track:
+            print(f"Next track selected: {result_track['track_name']} (Score: {result_track['net_score']}, Up: {result_track['up_votes']}, Down: {result_track['down_votes']})")
+            return jsonify(result_track)
         else:
-            return jsonify({"error": "No suitable track found (all tracks have negative votes)"}), 404
+            return jsonify({"error": "No tracks in queue"}), 404
             
     except Exception as e:
+        print(f"Error in get_next_track: {e}")
         return jsonify({"error": str(e)}), 500
     finally:
         db.close()
