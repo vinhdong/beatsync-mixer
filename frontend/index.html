@@ -2175,6 +2175,11 @@
       console.log('Page loaded, initializing role-based UI...');
       initializeRoleBasedUI();
       
+      // Fetch user profile if logged in (not guest)
+      if (window.userRole && window.userRole !== 'guest') {
+        fetchUserProfile();
+      }
+      
       document.getElementById('back-btn').onclick = function() {
         document.getElementById('tracks').style.display = 'none';
         document.getElementById('playlists').style.display = 'block';
@@ -2526,6 +2531,54 @@
 
     // Add debug button to console (for development)
     window.debugPlayer = debugPlayerState;
+
+    // Fetch user profile function
+    async function fetchUserProfile() {
+      try {
+        console.log('Fetching user profile to update display name...');
+        const response = await fetch('/fetch-user-profile', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          console.log('User profile fetched:', data);
+          
+          // Update global variables
+          window.userId = data.user_id;
+          window.displayName = data.display_name;
+          
+          // Update the role indicator with the real name
+          updateUserDisplayName(data.display_name);
+          
+          // Reload playlists now that we have proper user authentication
+          console.log('Reloading playlists with updated user profile...');
+          loadPlaylists();
+          
+        } else {
+          const error = await response.json();
+          console.warn('Could not fetch user profile:', error.error);
+        }
+      } catch (error) {
+        console.error('Error fetching user profile:', error);
+      }
+    }
+
+    // Update user display name in the UI
+    function updateUserDisplayName(displayName) {
+      // Find and update the welcome message in the role indicator
+      const userContainer = document.querySelector('.role-indicator').nextElementSibling;
+      if (userContainer) {
+        const nameSpan = userContainer.querySelector('span');
+        if (nameSpan && nameSpan.textContent.startsWith('Welcome,')) {
+          nameSpan.textContent = `Welcome, ${displayName}!`;
+          console.log('Updated display name to:', displayName);
+        }
+      }
+    }
 
     // Transfer playback to the Web Playback SDK device
   </script>
