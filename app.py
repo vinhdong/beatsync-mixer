@@ -1551,10 +1551,10 @@ def manual_token_exchange(auth_code):
                 'Content-Type': 'application/x-www-form-urlencoded'
             }
             
-            # Create a custom session to avoid DNS caching
-            session = requests.Session()
+            # Create a custom requests session to avoid DNS caching
+            req_session = requests.Session()
             
-            response = session.post(
+            response = req_session.post(
                 url,
                 data=token_data,
                 headers=headers,
@@ -1681,4 +1681,74 @@ def test_manual_token_exchange():
         return jsonify({
             "status": "error",
             "message": f"Test error: {str(e)}"
+        }), 500
+
+
+# Test endpoint to debug playlists after login
+@app.route("/test-playlists-debug")
+def test_playlists_debug():
+    """Debug endpoint to check playlists access after login"""
+    try:
+        # Check session
+        token_info = session.get("spotify_token")
+        user_role = session.get("role")
+        
+        debug_info = {
+            "session_role": user_role,
+            "has_token": bool(token_info),
+            "token_keys": list(token_info.keys()) if token_info else None,
+            "session_keys": list(session.keys())
+        }
+        
+        if not token_info:
+            return jsonify({
+                "status": "error",
+                "message": "No Spotify token in session",
+                "debug": debug_info
+            }), 401
+        
+        # Try to get Spotify client
+        sp = get_spotify_client()
+        if not sp:
+            return jsonify({
+                "status": "error",
+                "message": "Failed to create Spotify client",
+                "debug": debug_info
+            }), 401
+        
+        # Try to get user profile first (simpler call)
+        try:
+            user_profile = sp.current_user()
+            debug_info["user_profile"] = {
+                "id": user_profile.get("id"),
+                "display_name": user_profile.get("display_name")
+            }
+        except Exception as profile_error:
+            debug_info["profile_error"] = str(profile_error)
+        
+        # Try to get playlists
+        try:
+            playlists_data = sp.current_user_playlists(limit=5, offset=0)
+            debug_info["playlists_count"] = len(playlists_data.get("items", []))
+            debug_info["first_playlist"] = playlists_data.get("items", [{}])[0].get("name") if playlists_data.get("items") else None
+            
+            return jsonify({
+                "status": "success",
+                "message": "Playlists access successful",
+                "debug": debug_info
+            })
+            
+        except Exception as playlist_error:
+            debug_info["playlist_error"] = str(playlist_error)
+            return jsonify({
+                "status": "error",
+                "message": f"Playlists access failed: {str(playlist_error)}",
+                "debug": debug_info
+            }), 500
+            
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": f"Debug test failed: {str(e)}",
+            "debug": {"error": str(e)}
         }), 500
