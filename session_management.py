@@ -7,6 +7,7 @@ import os
 from flask import Blueprint, session, request, redirect, jsonify
 from db import get_db, QueueItem, Vote, ChatMessage
 from cache import invalidate_playlist_cache
+from datetime import datetime, timezone
 
 
 session_mgmt_bp = Blueprint('session_mgmt', __name__)
@@ -446,3 +447,24 @@ def session_info():
         'session_keys': list(session.keys()),
         'full_session': dict(session) if len(session.keys()) < 20 else 'Too many keys to display'
     })
+
+
+# Development/testing endpoint to simulate a host session
+@session_mgmt_bp.route("/test-host-session")
+def test_host_session():
+    """Test endpoint to simulate a host session (for debugging only)"""
+    if os.environ.get('FLASK_ENV') != 'development':
+        return "Test endpoint only available in development", 403
+    
+    # Set up a fake host session
+    session['role'] = 'host'
+    session['user_id'] = 'test_user_12345'
+    session['display_name'] = 'Test Host'
+    session['access_token'] = 'test_token_12345'
+    session['refresh_token'] = 'test_refresh_12345'
+    session['token_expires'] = (datetime.now(timezone.utc).timestamp() + 3600)
+    session['initialized'] = True
+    session['created_at'] = datetime.now(timezone.utc).isoformat()
+    session.permanent = True
+    
+    return redirect("/")

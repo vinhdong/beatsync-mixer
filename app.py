@@ -90,7 +90,7 @@ def create_app():
             html_content = f.read()
         
         # Inject user role and info into the HTML
-        role = session.get("role", "guest")
+        role = user_role or session.get("role", "guest")  # Use the validated user_role
         user_id = session.get("user_id", "")
         display_name = session.get("display_name", "Guest")
         

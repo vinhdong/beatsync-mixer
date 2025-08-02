@@ -917,7 +917,7 @@
     <div class="content-grid">
       <!-- Left side: Playlists and Tracks -->
       <div class="section">
-        <div id="playlists" style="display:none;">
+        <div id="playlists" style="display:block;">
           <h2>Your Playlists</h2>
           <ul id="playlist-list"></ul>
         </div>
@@ -2180,18 +2180,28 @@
 
     async function loadPlaylists() {
       try {
+        console.log('loadPlaylists called - User role:', window.userRole);
+        
         // Show loading indicator
         const playlistList = document.getElementById('playlist-list');
         playlistList.innerHTML = '<div style="text-align: center; padding: 20px; color: #666;"><div class="loading-spinner"></div> Loading playlists...</div>';
         
-        const res = await fetch('/playlists', {
+        console.log('Fetching playlists from /playlists/');
+        const res = await fetch('/playlists/', {
           credentials: 'include'
         });
+        
+        console.log('Playlists response status:', res.status, 'redirected:', res.redirected);
+        
         if (res.redirected) {
+          console.log('Response was redirected, showing login');
           document.getElementById('login').style.display = 'block';
           return;
         }
+        
         const data = await res.json();
+        console.log('Playlists data received:', data);
+        
         document.getElementById('login').style.display = 'none';
         document.getElementById('playlists').style.display = 'block';
         
@@ -2207,6 +2217,11 @@
         
         const ul = document.getElementById('playlist-list');
         ul.innerHTML = ''; // Clear loading indicator
+        
+        console.log('Processing playlists - Total items:', data.items.length, 'Is listener:', data.is_listener, 'Is host:', data.is_host);
+        
+        // Visual confirmation that we're processing playlists
+        console.log('About to update playlist list element with', data.items.length, 'items');
         
         // Show message if listener and no playlists
         if (data.is_listener && data.items.length === 0) {
@@ -2229,7 +2244,9 @@
           return;
         }
         
+        console.log('About to render playlists...');
         data.items.forEach(pl => {
+          console.log('Rendering playlist:', pl.name, 'ID:', pl.id, 'Tracks:', pl.tracks ? pl.tracks.total : 'Unknown');
           const li = document.createElement('li');
           li.innerHTML = `
             <span>${pl.name}</span>
@@ -2239,6 +2256,7 @@
           li.onclick = () => loadPlaylistTracks(pl.id);
           ul.appendChild(li);
         });
+        console.log('Finished rendering', data.items.length, 'playlists');
         
         // Add listener mode info message
         if (data.is_listener && data.items.length > 0) {
@@ -2258,12 +2276,27 @@
         
       } catch (err) {
         console.error('Error loading playlists:', err);
-        // Show error message
+        
+        // Show error message with more details
         const ul = document.getElementById('playlist-list');
         ul.innerHTML = `
           <div style="text-align: center; padding: 20px; color: #e74c3c;">
             <div style="font-size: 2em; margin-bottom: 10px;">❌</div>
-            Error loading playlists. Please try again later.
+            Error loading playlists<br>
+            <small style="color: #999; margin-top: 10px; display: block;">
+              Error: ${err.message}<br>
+              User Role: ${window.userRole}<br>
+              Time: ${new Date().toLocaleTimeString()}
+            </small>
+            <button onclick="loadPlaylists()" style="
+              margin-top: 10px; 
+              padding: 5px 10px; 
+              background: #1db954; 
+              color: white; 
+              border: none; 
+              border-radius: 3px; 
+              cursor: pointer;
+            ">Try Again</button>
           </div>
         `;
       }
