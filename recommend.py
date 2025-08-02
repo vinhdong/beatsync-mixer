@@ -13,8 +13,7 @@ recommend_bp = Blueprint('recommend', __name__)
 
 
 def manual_lastfm_get_similar(artist, title, api_key, limit=5):
-    """Manual Last.fm API call using hardcoded IPs as DNS fallback"""
-    ip_addresses = ["130.211.19.189"]
+    """Get similar tracks from Last.fm API with fallback methods"""
     
     params = {
         'method': 'track.getsimilar',
@@ -25,6 +24,63 @@ def manual_lastfm_get_similar(artist, title, api_key, limit=5):
         'limit': str(limit)
     }
     
+    # Try direct API call first
+    try:
+        print(f"🎵 Getting Last.fm recommendations for: {artist} - {title}")
+        
+        response = requests.get(
+            "http://ws.audioscrobbler.com/2.0/",
+            params=params,
+            timeout=(10, 15),
+            headers={'User-Agent': 'BeatSyncMixer/1.0'}
+        )
+        
+        print(f"Last.fm API response status: {response.status_code}")
+        
+        if response.status_code == 200:
+            data = response.json()
+            print(f"Last.fm API response: {data}")
+            
+            if 'error' in data:
+                print(f"❌ Last.fm API error: {data.get('message', 'Unknown error')}")
+                return []
+            
+            similar_tracks = []
+            tracks = data.get('similartracks', {}).get('track', [])
+            
+            if isinstance(tracks, dict):
+                tracks = [tracks]
+            
+            for track in tracks[:limit]:
+                artist_name = track.get('artist', {})
+                if isinstance(artist_name, dict):
+                    artist_name = artist_name.get('name', 'Unknown Artist')
+                elif isinstance(artist_name, str):
+                    artist_name = artist_name
+                else:
+                    artist_name = 'Unknown Artist'
+                
+                similar_tracks.append({
+                    'artist': artist_name,
+                    'title': track.get('name', 'Unknown Title'),
+                    'url': track.get('url', '#'),
+                    'source': 'Last.fm'
+                })
+            
+            print(f"✅ Found {len(similar_tracks)} recommendations")
+            return similar_tracks
+        else:
+            print(f"❌ Last.fm API returned status {response.status_code}: {response.text}")
+            
+    except Exception as e:
+        print(f"❌ Last.fm API call failed: {e}")
+    
+    # If we get here, the API call failed
+    print("🔄 Falling back to manual IP lookup...")
+    
+    # Fallback to IP-based call
+    ip_addresses = ["130.211.19.189", "64.34.119.12"]  # Updated IP addresses for Last.fm
+    
     for ip in ip_addresses:
         try:
             url = f"http://{ip}/2.0/"
@@ -33,9 +89,9 @@ def manual_lastfm_get_similar(artist, title, api_key, limit=5):
                 'User-Agent': 'BeatSyncMixer/1.0'
             }
             
-            req_session = requests.Session()
+            print(f"Trying IP fallback: {ip}")
             
-            response = req_session.get(
+            response = requests.get(
                 url,
                 params=params,
                 headers=headers,
@@ -46,8 +102,8 @@ def manual_lastfm_get_similar(artist, title, api_key, limit=5):
                 data = response.json()
                 
                 if 'error' in data:
-                    print(f"Last.fm API error: {data.get('message', 'Unknown error')}")
-                    return None
+                    print(f"Last.fm API error (IP {ip}): {data.get('message', 'Unknown error')}")
+                    continue
                 
                 similar_tracks = []
                 tracks = data.get('similartracks', {}).get('track', [])
@@ -56,19 +112,30 @@ def manual_lastfm_get_similar(artist, title, api_key, limit=5):
                     tracks = [tracks]
                 
                 for track in tracks[:limit]:
+                    artist_name = track.get('artist', {})
+                    if isinstance(artist_name, dict):
+                        artist_name = artist_name.get('name', 'Unknown Artist')
+                    elif isinstance(artist_name, str):
+                        artist_name = artist_name
+                    else:
+                        artist_name = 'Unknown Artist'
+                    
                     similar_tracks.append({
-                        'artist': track.get('artist', {}).get('name', 'Unknown Artist'),
+                        'artist': artist_name,
                         'title': track.get('name', 'Unknown Title'),
-                        'url': track.get('url', '#')
+                        'url': track.get('url', '#'),
+                        'source': 'Last.fm'
                     })
                 
+                print(f"✅ Found {len(similar_tracks)} recommendations via IP {ip}")
                 return similar_tracks
                 
         except Exception as e:
-            print(f"Manual Last.fm API call failed for IP {ip}: {e}")
+            print(f"IP fallback failed for {ip}: {e}")
             continue
     
-    return None
+    print("❌ All Last.fm API attempts failed")
+    return []
 
 
 @recommend_bp.route("/<track_uri>")
@@ -105,10 +172,19 @@ def recommend(track_uri):
             
             recommendations = manual_lastfm_get_similar(artist, title, api_key, limit=5)
             
-            if recommendations is None:
-                return jsonify({"error": "Failed to get recommendations from Last.fm"}), 500
+            if not recommendations:
+                return jsonify({
+                    "recommendations": [],
+                    "message": "No similar tracks found for this song.",
+                    "source": "Last.fm",
+                    "original_track": {
+                        "artist": artist,
+                        "title": title,
+                        "uri": track_uri
+                    }
+                })
             
-            print(f"Got {len(recommendations)} recommendations for {artist} - {title}")
+            print(f"✅ Returning {len(recommendations)} recommendations for {artist} - {title}")
             
             return jsonify({
                 "recommendations": recommendations,
@@ -125,7 +201,7 @@ def recommend(track_uri):
         return jsonify({"error": "Failed to get recommendations"}), 500
 
 
-@recommend_bp.route("-direct")
+@recommend_bp.route("/direct")
 def recommend_direct():
     """Test endpoint for Last.fm recommendations (accepts artist and title directly)"""
     try:
@@ -142,10 +218,14 @@ def recommend_direct():
         
         recommendations = manual_lastfm_get_similar(artist, title, api_key, limit=5)
         
-        if recommendations is None:
-            return jsonify({"error": "Failed to get recommendations from Last.fm"}), 500
+        if not recommendations:
+            return jsonify({
+                "recommendations": [],
+                "message": "No similar tracks found for this song.",
+                "source": "Last.fm"
+            })
         
-        print(f"Got {len(recommendations)} recommendations for {artist} - {title}")
+        print(f"✅ Returning {len(recommendations)} recommendations for {artist} - {title}")
         
         return jsonify({
             "recommendations": recommendations,

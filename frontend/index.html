@@ -2658,13 +2658,15 @@
         const data = await response.json();
         const recommendations = data.recommendations || [];
         
+        console.log('Recommendations response:', data);
+        
         if (recommendations.length === 0) {
-          const message = data.message || 'No similar tracks found.';
-          recsContainer.innerHTML = `<div class="recommendation-item" style="color: #666; font-style: italic;">${message}</div>`;
+          const message = data.message || 'No similar tracks found for this song.';
+          recsContainer.innerHTML = `<div class="recommendation-item" style="color: #666; font-style: italic; padding: 10px; text-align: center;">${message}</div>`;
         } else {
           recsContainer.innerHTML = recommendations.map(rec => `
-            <div class="recommendation-item">
-              <a href="${rec.url}" target="_blank" class="recommendation-link">
+            <div class="recommendation-item" style="padding: 8px; border-bottom: 1px solid #444; margin-bottom: 5px;">
+              <a href="${rec.url}" target="_blank" class="recommendation-link" style="color: #1db954; text-decoration: none;">
                 <strong>${rec.artist}</strong> — ${rec.title}
               </a>
               ${rec.source ? `<small style="color: #666; margin-left: 10px; font-size: 10px;">(${rec.source})</small>` : ''}
