@@ -1962,12 +1962,23 @@
       chatMessages.scrollTop = chatMessages.scrollHeight;
     });
 
+    let votingInProgress = {}; // Track voting per track to prevent rapid clicking
+    
     function voteTrack(trackUri, voteType, buttonElement) {
       // Ensure user is authenticated
       if (!window.userRole) {
         alert('Please log in to vote on tracks');
         return;
       }
+      
+      // Prevent rapid clicking on the same track
+      const voteKey = `${trackUri}_${voteType}`;
+      if (votingInProgress[voteKey]) {
+        console.log('Vote already in progress for this track, ignoring click');
+        return;
+      }
+      
+      votingInProgress[voteKey] = true;
       
       // Add visual feedback to the clicked button
       if (buttonElement) {
@@ -1976,11 +1987,8 @@
         buttonElement.offsetHeight;
         buttonElement.classList.add('just-voted');
         
-        // Temporarily disable the button to prevent double-clicking
+        // Disable the button to prevent double-clicking
         buttonElement.disabled = true;
-        setTimeout(() => {
-          buttonElement.disabled = false;
-        }, 300);
         
         // Remove the animation class after it completes
         setTimeout(() => {
@@ -1995,6 +2003,14 @@
         track_uri: trackUri,
         vote: voteType
       });
+      
+      // Clear the voting lock and re-enable button after a delay
+      setTimeout(() => {
+        votingInProgress[voteKey] = false;
+        if (buttonElement) {
+          buttonElement.disabled = false;
+        }
+      }, 1000); // 1 second delay to prevent rapid clicking
     }
 
     function sendChatMessage(event) {
