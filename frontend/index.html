@@ -1961,8 +1961,8 @@
       chatMessages.scrollTop = chatMessages.scrollHeight;
     });
 
-    // Track voting state to prevent double votes
-    const votingInProgress = new Set();
+    // Track voting state to prevent double votes - use more specific tracking
+    const votingInProgress = new Map(); // Track by user + track + vote type
 
     function voteTrack(trackUri, voteType, buttonElement) {
       // Ensure user is authenticated
@@ -1971,17 +1971,18 @@
         return;
       }
       
-      // Create unique key for this vote attempt
-      const voteKey = `${trackUri}-${voteType}`;
+      // Create unique key for this specific vote attempt
+      const userId = window.userId || 'anonymous';
+      const voteKey = `${userId}-${trackUri}-${voteType}`;
       
-      // Prevent double voting
+      // Prevent double voting with more aggressive checking
       if (votingInProgress.has(voteKey)) {
-        console.log('Vote already in progress, ignoring duplicate');
+        console.log(`Vote already in progress: ${voteKey}, ignoring duplicate`);
         return;
       }
       
-      // Mark this vote as in progress
-      votingInProgress.add(voteKey);
+      // Mark this specific vote as in progress with timestamp
+      votingInProgress.set(voteKey, Date.now());
       
       // Add visual feedback to the clicked button
       if (buttonElement) {
@@ -1992,9 +1993,11 @@
         
         // Disable the button temporarily to prevent accidental double-clicking
         buttonElement.disabled = true;
+        
+        // Re-enable after longer delay
         setTimeout(() => {
           buttonElement.disabled = false;
-        }, 500); // Increased timeout
+        }, 1500); // Longer timeout for safety
         
         // Remove the animation class after it completes
         setTimeout(() => {
@@ -2002,7 +2005,7 @@
         }, 500);
       }
       
-      console.log(`Voting ${voteType} on track: ${trackUri}`);
+      console.log(`Voting ${voteType} on track: ${trackUri} (key: ${voteKey})`);
       
       // Send vote to backend - let backend handle everything
       socket.emit('vote_add', {
@@ -2010,10 +2013,20 @@
         vote: voteType
       });
       
-      // Clear the voting flag after a delay to allow the vote to process
+      // Clear the voting flag after a longer delay to allow the vote to process
       setTimeout(() => {
         votingInProgress.delete(voteKey);
-      }, 1000);
+        console.log(`Cleared voting flag for: ${voteKey}`);
+      }, 2000); // Increased to 2 seconds
+      
+      // Also clean up old voting flags to prevent memory leaks
+      const now = Date.now();
+      for (const [key, timestamp] of votingInProgress.entries()) {
+        if (now - timestamp > 5000) { // Remove flags older than 5 seconds
+          votingInProgress.delete(key);
+          console.log(`Cleaned up old voting flag: ${key}`);
+        }
+      }
     }
 
     function sendChatMessage(event) {

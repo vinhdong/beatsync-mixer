@@ -147,37 +147,57 @@ def register_handlers():
             print(f"[VOTE {vote_event_id}] START: user_id={user_id}, track_uri={track_uri}, vote_type={vote_type}")
 
             with get_db() as db:
-                # Get vote counts BEFORE adding the new vote
-                up_votes_before = (
-                    db.query(Vote).filter(Vote.track_uri == track_uri, Vote.vote_type == "up").count()
-                )
-                down_votes_before = (
-                    db.query(Vote).filter(Vote.track_uri == track_uri, Vote.vote_type == "down").count()
-                )
-                
-                print(f"[VOTE {vote_event_id}] BEFORE: {up_votes_before} up, {down_votes_before} down")
-                
-                # Simply add the vote (allow multiple votes per user per track)
-                vote = Vote(track_uri=track_uri, vote_type=vote_type, user_id=user_id)
-                db.add(vote)
-                # Remove explicit commit - let the context manager handle it
-                
-                # Calculate updated vote counts for this track AFTER adding
-                up_votes_after = (
-                    db.query(Vote).filter(Vote.track_uri == track_uri, Vote.vote_type == "up").count()
-                )
-                down_votes_after = (
-                    db.query(Vote).filter(Vote.track_uri == track_uri, Vote.vote_type == "down").count()
-                )
-                
-                print(f"[VOTE {vote_event_id}] AFTER: {up_votes_after} up, {down_votes_after} down")
-                print(f"[VOTE {vote_event_id}] SUCCESS: Added {vote_type} vote from {user_id}")
-                
-                # Broadcast updated vote counts to all connected clients
-                socketio.emit(
-                    "vote_updated", 
-                    {"track_uri": track_uri, "up_votes": up_votes_after, "down_votes": down_votes_after}
-                )
+                # Use a single transaction to get current counts and add the new vote atomically
+                try:
+                    # Get vote counts BEFORE adding the new vote using a single query per type
+                    up_votes_before = (
+                        db.query(Vote).filter(Vote.track_uri == track_uri, Vote.vote_type == "up").count()
+                    )
+                    down_votes_before = (
+                        db.query(Vote).filter(Vote.track_uri == track_uri, Vote.vote_type == "down").count()
+                    )
+                    
+                    print(f"[VOTE {vote_event_id}] BEFORE: {up_votes_before} up, {down_votes_before} down")
+                    
+                    # Add the new vote
+                    vote = Vote(track_uri=track_uri, vote_type=vote_type, user_id=user_id)
+                    db.add(vote)
+                    db.flush()  # Flush to assign ID but don't commit yet
+                    
+                    # Calculate updated vote counts for this track AFTER adding (single query per type)
+                    up_votes_after = (
+                        db.query(Vote).filter(Vote.track_uri == track_uri, Vote.vote_type == "up").count()
+                    )
+                    down_votes_after = (
+                        db.query(Vote).filter(Vote.track_uri == track_uri, Vote.vote_type == "down").count()
+                    )
+                    
+                    print(f"[VOTE {vote_event_id}] AFTER: {up_votes_after} up, {down_votes_after} down")
+                    
+                    # Verify the vote was actually added (sanity check)
+                    expected_increase = 1 if vote_type == "up" else 0
+                    actual_increase = up_votes_after - up_votes_before
+                    
+                    if vote_type == "up" and actual_increase != 1:
+                        print(f"[VOTE {vote_event_id}] WARNING: Expected up vote increase of 1, got {actual_increase}")
+                    elif vote_type == "down" and (down_votes_after - down_votes_before) != 1:
+                        print(f"[VOTE {vote_event_id}] WARNING: Expected down vote increase of 1, got {down_votes_after - down_votes_before}")
+                    
+                    # Commit the transaction
+                    db.commit()
+                    
+                    print(f"[VOTE {vote_event_id}] SUCCESS: Added {vote_type} vote from {user_id}")
+                    
+                    # Broadcast updated vote counts to all connected clients
+                    socketio.emit(
+                        "vote_updated", 
+                        {"track_uri": track_uri, "up_votes": up_votes_after, "down_votes": down_votes_after}
+                    )
+                    
+                except Exception as db_error:
+                    print(f"[VOTE {vote_event_id}] DB ERROR: {db_error}")
+                    db.rollback()
+                    raise db_error
                 
         except Exception as e:
             print(f"[VOTE {vote_event_id}] ERROR: {e}")
