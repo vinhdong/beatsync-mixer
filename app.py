@@ -61,23 +61,46 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
+# Configure requests session with aggressive retry and timeout handling for Heroku
 def create_spotify_session():
+    import requests
+    from requests.adapters import HTTPAdapter
+    from urllib3.util.retry import Retry
+    
     session = requests.Session()
     
-    # Configure retry strategy for network issues
+    # Very aggressive retry strategy for Heroku network issues
     retry_strategy = Retry(
-        total=3,
-        backoff_factor=2,
-        status_forcelist=[429, 500, 502, 503, 504],
-        allowed_methods=["HEAD", "GET", "PUT", "DELETE", "OPTIONS", "TRACE", "POST"]
+        total=5,  # More retries
+        connect=3,  # Connection-specific retries
+        read=3,     # Read-specific retries
+        status=3,   # Status-specific retries
+        backoff_factor=0.5,  # Faster backoff
+        status_forcelist=[429, 500, 502, 503, 504, 520, 521, 522, 523, 524],
+        allowed_methods=["HEAD", "GET", "PUT", "DELETE", "OPTIONS", "TRACE", "POST"],
+        raise_on_status=False  # Don't raise on HTTP errors
     )
     
-    adapter = HTTPAdapter(max_retries=retry_strategy)
+    adapter = HTTPAdapter(
+        max_retries=retry_strategy,
+        pool_connections=20,  # More connection pooling
+        pool_maxsize=20,
+        pool_block=True
+    )
+    
     session.mount("http://", adapter)
     session.mount("https://", adapter)
     
-    # Set longer timeouts for Heroku's network issues
-    session.timeout = (30, 60)  # 30s connect, 60s read timeout
+    # Aggressive timeouts for Heroku
+    session.timeout = (15, 45)  # 15s connect, 45s read
+    
+    # Add DNS resolution help
+    session.headers.update({
+        'Connection': 'keep-alive',
+        'User-Agent': 'BeatSync-Mixer/1.0 (Heroku)',
+        'Accept': 'application/json',
+        'Cache-Control': 'no-cache'
+    })
     
     return session
 
@@ -89,9 +112,11 @@ oauth.register(
     authorize_url="https://accounts.spotify.com/authorize",
     client_kwargs={
         "scope": "user-read-playback-state user-modify-playback-state streaming playlist-read-private user-read-private user-read-email",
-        "timeout": 60,  # Increased timeout for Heroku's network issues
+        "timeout": 120,  # Much longer timeout
     },
-    # Additional OAuth settings for better state handling
+    # Use the custom session with aggressive retry handling
+    session=create_spotify_session(),
+    # Additional OAuth settings
     server_metadata_url=None,  # Don't auto-discover, use explicit URLs
     authorize_params={'show_dialog': 'false'},  # Don't force re-authorization
 )
@@ -596,6 +621,15 @@ def callback():
     # All retries failed
     print("All OAuth callback attempts failed")
     
+    # Check if we should switch to demo mode
+    attempt_count = session.get('oauth_attempt_count', 1)
+    requested_role = session.get('requested_role', 'listener')
+    
+    if attempt_count > 1:
+        print(f"Multiple OAuth failures detected, redirecting to demo mode")
+        session.pop('callback_count', None)
+        return redirect(f"/demo-login?role={requested_role}")
+    
     # Final attempt to restore session for next try
     if original_session_backup:
         print("Final session backup restoration before failure redirect")
@@ -604,7 +638,10 @@ def callback():
         print(f"Restored {len(original_session_backup)} session keys for future attempts")
     
     session.pop('callback_count', None)
-    return redirect("/select-role?error=oauth_failed")
+    
+    # Increment attempt count and redirect to smart retry
+    session['oauth_attempt_count'] = attempt_count + 1
+    return redirect(f"/login?role={requested_role}&attempt={attempt_count + 1}")
 
 
 # Fetch playlists
@@ -775,6 +812,37 @@ def index():
     user_id = session.get("user_id", "")
     display_name = session.get("display_name", "Guest")
     emergency_mode = session.get("emergency_mode", False)
+    demo_mode = session.get("demo_mode", False) or request.args.get('demo') == 'true'
+    
+    # Check for demo mode parameter and update session
+    if request.args.get('demo') == 'true':
+        session['demo_mode'] = True
+        demo_mode = True
+    
+    # Check for demo mode
+    if demo_mode:
+        demo_banner = """
+        <div id="demo-banner" style="
+            background: linear-gradient(135deg, #f39c12, #e67e22);
+            color: white;
+            padding: 15px;
+            text-align: center;
+            font-weight: bold;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+            border-bottom: 3px solid #d35400;
+            margin-bottom: 20px;
+        ">
+            🎭 DEMO MODE ACTIVE 🎭<br>
+            <small style="font-weight: normal; opacity: 0.9;">
+                OAuth connection to Spotify failed due to network issues. 
+                App is running in demo mode - chat, queue, and voting work normally.
+                Actual music playback requires real Spotify connection.
+                <a href="/login?role=host&attempt=1" style="color: #fff; text-decoration: underline; margin-left: 10px;">Try OAuth Again</a>
+            </small>
+        </div>
+        """
+        # Insert demo banner after body tag
+        html_content = html_content.replace('<body>', '<body>' + demo_banner)
     
     # Check for emergency mode parameter
     if request.args.get('emergency') == 'true' or emergency_mode:
@@ -793,7 +861,7 @@ def index():
             <small style="font-weight: normal; opacity: 0.9;">
                 Limited functionality due to Spotify connection issues. 
                 Some features like playlist integration and playback control may not work.
-                <a href="/login?role=host&retry=1" style="color: #fff; text-decoration: underline; margin-left: 10px;">Try Normal Mode Again</a>
+                <a href="/login?role=host&attempt=1" style="color: #fff; text-decoration: underline; margin-left: 10px;">Try Normal Mode Again</a>
             </small>
         </div>
         """
@@ -1829,7 +1897,7 @@ def auto_play_next():
             return next_track_response
         
         next_track = next_track_response.get_json()
-        track_uri = next_track["track_uri"]
+        track_uri = next_track["track_uri"];
         
         # Play the track
         token = session.get("spotify_token")
@@ -1890,38 +1958,4 @@ def remove_from_queue(track_uri):
         db.close()
 
 
-# Emergency bypass login for testing (only use during OAuth debugging)
-@app.route("/bypass-login")
-def bypass_login():
-    """Emergency bypass for OAuth issues during testing - NOT FOR PRODUCTION"""
-    # Only allow in development
-    if os.getenv('FLASK_ENV') == 'production':
-        return redirect("/select-role?error=bypass_disabled")
-    
-    requested_role = request.args.get('role', 'host')
-    print(f"BYPASS LOGIN: Setting role to {requested_role}")
-    
-    # Set up minimal session
-    session['role'] = requested_role
-    session['user_id'] = f"test_user_{int(time.time())}"
-    session['display_name'] = f"Test {requested_role.title()}"
-    session['spotify_token'] = {
-        'access_token': 'test_token',
-        'token_type': 'Bearer',
-        'expires_in': 3600
-    }
-    session.permanent = True
-    
-    if requested_role == 'host':
-        # Create host file for testing
-        host_file = 'current_host.txt'
-        with open(host_file, 'w') as f:
-            f.write(f"{session['user_id']}|{session['display_name']}")
-    
-    print(f"BYPASS: Session set up for {requested_role}: {dict(session)}")
-    return redirect("/")
-
-
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8000))
-    socketio.run(app, host="0.0.0.0", port=port, debug=False, allow_unsafe_werkzeug=True)
+# Intelligent OAuth fallback for network issues
