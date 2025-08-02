@@ -377,8 +377,6 @@ def callback():
             elif isinstance(state_data, str):
                 # Convert old string format to proper dict format
                 print(f"Converting state {callback_state} from string to proper dict format")
-                import time
-                import os
                 session[state_key] = {
                     'data': {
                         'redirect_uri': os.getenv('SPOTIFY_REDIRECT_URI', 'https://beatsync-mixer-5715861af181.herokuapp.com/callback')
@@ -420,7 +418,6 @@ def callback():
                     state_data = session[state_key]
                     print(f"Found state data: {state_data}")
                     if isinstance(state_data, dict) and 'exp' in state_data:
-                        import time
                         current_time = time.time()
                         print(f"State expiration check: current={current_time}, exp={state_data['exp']}")
                         if current_time > state_data['exp']:
@@ -440,8 +437,6 @@ def callback():
                     else:
                         print(f"No existing OAuth states found, creating new state structure")
                         # Create a proper state structure matching what the OAuth library expects
-                        import time
-                        import os
                         session[state_key] = {
                             'data': {
                                 'redirect_uri': os.getenv('SPOTIFY_REDIRECT_URI', 'https://beatsync-mixer-5715861af181.herokuapp.com/callback')
@@ -530,7 +525,6 @@ def callback():
             # Handle role assignment
             if requested_role == 'host':
                 # Check if someone is already hosting
-                import os
                 host_file = 'current_host.txt'
                 
                 if os.path.exists(host_file):
