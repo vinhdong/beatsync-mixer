@@ -1371,7 +1371,6 @@ def host_status():
     """Check if someone is currently hosting"""
     # Check if there's an active host session
     # For simplicity, we'll use a simple file-based approach
-    import os
     host_file = 'current_host.txt'
     
     if os.path.exists(host_file):
@@ -1397,7 +1396,14 @@ def sign_out_host():
         return jsonify({"error": "Only hosts can sign out"}), 403
     
     # Remove host file
-    import os
+    host_file = 'current_host.txt'
+    if os.path.exists(host_file):
+        os.remove(host_file)
+    
+    # Clear session
+    session.clear()
+    
+    return jsonify({"status": "success", "message": "Signed out as host"})
     host_file = 'current_host.txt'
     if os.path.exists(host_file):
         os.remove(host_file)
