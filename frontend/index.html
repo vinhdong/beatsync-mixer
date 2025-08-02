@@ -1021,15 +1021,19 @@
     let currentUser = 'User_' + Math.random().toString(36).substr(2, 9); // Generate random user ID
     let voteData = {}; // Store vote counts for tracks
     let socketConnected = false; // Track socket connection status
+    
+    // Track socket connection details
+    const socketId = Math.random().toString(36).substr(2, 8);
+    console.log(`[SOCKET ${socketId}] Socket created for role:`, window.userRole);
 
     // Socket connection events
     socket.on('connect', function() {
-      console.log('Socket.IO connected');
+      console.log(`[SOCKET ${socketId}] Socket.IO connected`);
       socketConnected = true;
     });
 
     socket.on('disconnect', function() {
-      console.log('Socket.IO disconnected');
+      console.log(`[SOCKET ${socketId}] Socket.IO disconnected`);
       socketConnected = false;
     });
 
@@ -1904,11 +1908,16 @@
     });
 
     socket.on("vote_updated", data => {
+      const voteUpdateId = Math.random().toString(36).substr(2, 8);
+      console.log(`[VOTE UPDATE ${voteUpdateId}] Received vote update:`, data);
+      
       const trackId = data.track_uri;
       const safeId = trackId.replace(/[^a-zA-Z0-9]/g, '_');
       const upElement = document.getElementById(`up-${safeId}`);
       const downElement = document.getElementById(`down-${safeId}`);
       const scoreElement = document.getElementById(`score-${safeId}`);
+      
+      console.log(`[VOTE UPDATE ${voteUpdateId}] Updating UI - up: ${data.up_votes}, down: ${data.down_votes}`);
       
       if (upElement) upElement.textContent = data.up_votes;
       if (downElement) downElement.textContent = data.down_votes;
@@ -1992,12 +2001,14 @@
         }, 300); // Quick animation
       }
       
-      console.log(`Voting ${voteType} on track: ${trackUri}`);
+      const voteId = Math.random().toString(36).substr(2, 8);
+      console.log(`[VOTE ${voteId}] Voting ${voteType} on track: ${trackUri} (role: ${window.userRole})`);
       
       // Send vote to backend immediately - responsive to every click
       socket.emit('vote_add', {
         track_uri: trackUri,
-        vote: voteType
+        vote: voteType,
+        client_vote_id: voteId  // Add unique ID to track this specific vote
       });
     }
 

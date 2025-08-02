@@ -3,7 +3,7 @@ Socket.IO event handlers for BeatSync Mixer.
 Handles real-time communication for queue, voting, and chat.
 """
 
-from flask import session
+from flask import session, request
 from flask_socketio import SocketIO, emit
 from db import get_db, QueueItem, Vote, ChatMessage
 
@@ -44,11 +44,14 @@ def register_handlers():
         """Handle client connection"""
         try:
             user_role = session.get("role")
+            user_id = session.get("user_id", "unknown")
+            display_name = session.get("display_name", "Unknown")
+            
             if not user_role or user_role not in ["host", "listener"]:
                 emit("error", {"message": "Authentication required"})
                 return
             
-            print(f"User connected: {session.get('display_name', 'Unknown')} ({user_role})")
+            print(f"[CONNECTION] User connected: {display_name} (role: {user_role}, user_id: {user_id}, sid: {request.sid})")
             emit("connected", {"role": user_role, "message": "Connected successfully"})
             
         except Exception as e:
@@ -69,7 +72,8 @@ def register_handlers():
     def handle_disconnect(reason=None):
         """Handle client disconnection"""
         user_name = session.get("display_name", "Unknown")
-        print(f"User disconnected: {user_name} (reason: {reason})")
+        user_id = session.get("user_id", "unknown")
+        print(f"[DISCONNECTION] User disconnected: {user_name} (user_id: {user_id}, sid: {request.sid}, reason: {reason})")
 
 
     @socketio.on_error_default
@@ -125,6 +129,7 @@ def register_handlers():
         """Handle voting on tracks - Available to all authenticated users"""
         import uuid
         vote_event_id = str(uuid.uuid4())[:8]  # Short unique ID for this vote event
+        client_vote_id = data.get("client_vote_id", "unknown")
         
         try:
             # Check if user is authenticated (has any role)
@@ -135,6 +140,7 @@ def register_handlers():
             track_uri = data.get("track_uri")
             vote_type = data.get("vote")  # 'up' or 'down'
             user_id = session.get("user_id", "anonymous")  # Use session user_id
+            role = session.get("role", "unknown")
             
             if vote_type not in ["up", "down"]:
                 emit("error", {"message": "Invalid vote type"})
@@ -144,7 +150,9 @@ def register_handlers():
                 emit("error", {"message": "Invalid track URI"})
                 return
 
-            print(f"[VOTE {vote_event_id}] START: user_id={user_id}, track_uri={track_uri}, vote_type={vote_type}")
+            print(f"[VOTE {vote_event_id}] START: client_id={client_vote_id}, user_id={user_id}, role={role}, track_uri={track_uri}, vote_type={vote_type}")
+            print(f"[VOTE {vote_event_id}] Session ID: {session.get('_permanent', 'no-session')}")
+            print(f"[VOTE {vote_event_id}] Request SID: {request.sid}")
 
             with get_db() as db:
                 # Use a single transaction to get current counts and add the new vote atomically
