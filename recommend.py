@@ -152,18 +152,26 @@ def recommend(track_uri):
             # Extract artist and title from track name (basic parsing)
             track_name = queue_item.track_name
             
-            # Try to parse "Artist - Title" format
+            # Parse track name format - it appears to be "Title - Artist1, Artist2, etc."
             if " - " in track_name:
                 parts = track_name.split(" - ", 1)
-                artist = parts[0].strip()
-                title = parts[1].strip()
+                title = parts[0].strip()
+                artists_part = parts[1].strip()
+                
+                # Take the first artist from the list
+                if ", " in artists_part:
+                    artist = artists_part.split(", ")[0].strip()
+                else:
+                    artist = artists_part.strip()
             else:
                 # Fallback: use track name as title, no artist
-                artist = ""
                 title = track_name.strip()
+                artist = "Unknown Artist"
             
-            if not artist or not title:
-                return jsonify({"error": "Could not parse artist and title from track name"}), 400
+            print(f"🎵 Parsed track: Title='{title}', Artist='{artist}' from '{track_name}'")
+            
+            if not title:
+                return jsonify({"error": "Could not parse title from track name"}), 400
             
             # Get Last.fm recommendations using manual IP-based client
             api_key = os.getenv("LASTFM_API_KEY")
