@@ -123,6 +123,9 @@ def register_handlers():
     @socketio.on("vote_add")
     def handle_vote_add(data):
         """Handle voting on tracks - Available to all authenticated users"""
+        import uuid
+        vote_event_id = str(uuid.uuid4())[:8]  # Short unique ID for this vote event
+        
         try:
             # Check if user is authenticated (has any role)
             if not session.get("role"):
@@ -141,7 +144,7 @@ def register_handlers():
                 emit("error", {"message": "Invalid track URI"})
                 return
 
-            print(f"[VOTE] Processing vote: user_id={user_id}, track_uri={track_uri}, vote_type={vote_type}")
+            print(f"[VOTE {vote_event_id}] START: user_id={user_id}, track_uri={track_uri}, vote_type={vote_type}")
 
             with get_db() as db:
                 # Get vote counts BEFORE adding the new vote
@@ -152,12 +155,12 @@ def register_handlers():
                     db.query(Vote).filter(Vote.track_uri == track_uri, Vote.vote_type == "down").count()
                 )
                 
-                print(f"[VOTE] Counts before vote: {up_votes_before} up, {down_votes_before} down")
+                print(f"[VOTE {vote_event_id}] BEFORE: {up_votes_before} up, {down_votes_before} down")
                 
                 # Simply add the vote (allow multiple votes per user per track)
                 vote = Vote(track_uri=track_uri, vote_type=vote_type, user_id=user_id)
                 db.add(vote)
-                db.commit()  # Make sure to commit the transaction
+                # Remove explicit commit - let the context manager handle it
                 
                 # Calculate updated vote counts for this track AFTER adding
                 up_votes_after = (
@@ -167,8 +170,8 @@ def register_handlers():
                     db.query(Vote).filter(Vote.track_uri == track_uri, Vote.vote_type == "down").count()
                 )
                 
-                print(f"[VOTE] Counts after vote: {up_votes_after} up, {down_votes_after} down")
-                print(f"[VOTE] Vote processed successfully: {user_id} voted {vote_type} on {track_uri}")
+                print(f"[VOTE {vote_event_id}] AFTER: {up_votes_after} up, {down_votes_after} down")
+                print(f"[VOTE {vote_event_id}] SUCCESS: Added {vote_type} vote from {user_id}")
                 
                 # Broadcast updated vote counts to all connected clients
                 socketio.emit(
@@ -177,7 +180,7 @@ def register_handlers():
                 )
                 
         except Exception as e:
-            print(f"[VOTE ERROR] Error in vote_add: {e}")
+            print(f"[VOTE {vote_event_id}] ERROR: {e}")
             import traceback
             traceback.print_exc()
             emit("error", {"message": "Failed to process vote"})

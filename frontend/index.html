@@ -1961,12 +1961,27 @@
       chatMessages.scrollTop = chatMessages.scrollHeight;
     });
 
+    // Track voting state to prevent double votes
+    const votingInProgress = new Set();
+
     function voteTrack(trackUri, voteType, buttonElement) {
       // Ensure user is authenticated
       if (!window.userRole) {
         alert('Please log in to vote on tracks');
         return;
       }
+      
+      // Create unique key for this vote attempt
+      const voteKey = `${trackUri}-${voteType}`;
+      
+      // Prevent double voting
+      if (votingInProgress.has(voteKey)) {
+        console.log('Vote already in progress, ignoring duplicate');
+        return;
+      }
+      
+      // Mark this vote as in progress
+      votingInProgress.add(voteKey);
       
       // Add visual feedback to the clicked button
       if (buttonElement) {
@@ -1979,12 +1994,12 @@
         buttonElement.disabled = true;
         setTimeout(() => {
           buttonElement.disabled = false;
-        }, 300);
+        }, 500); // Increased timeout
         
         // Remove the animation class after it completes
         setTimeout(() => {
           buttonElement.classList.remove('just-voted');
-        }, 300);
+        }, 500);
       }
       
       console.log(`Voting ${voteType} on track: ${trackUri}`);
@@ -1994,6 +2009,11 @@
         track_uri: trackUri,
         vote: voteType
       });
+      
+      // Clear the voting flag after a delay to allow the vote to process
+      setTimeout(() => {
+        votingInProgress.delete(voteKey);
+      }, 1000);
     }
 
     function sendChatMessage(event) {
