@@ -51,7 +51,14 @@ app.config['SESSION_COOKIE_DOMAIN'] = None  # Let Flask handle domain automatica
 Session(app)
 
 # Configure caching
-app.config['CACHE_TYPE'] = 'SimpleCache'  # In-memory cache for development
+# Configure caching based on environment
+if os.getenv('REDIS_URL'):
+    app.config['CACHE_TYPE'] = 'RedisCache'
+    app.config['CACHE_REDIS_URL'] = os.getenv('REDIS_URL')
+    print("Using Redis cache for shared cache between dynos")
+else:
+    app.config['CACHE_TYPE'] = 'SimpleCache'  # In-memory cache for development
+    print("Using SimpleCache for local development")
 app.config['CACHE_DEFAULT_TIMEOUT'] = 300  # 5 minutes
 cache = Cache(app)
 
