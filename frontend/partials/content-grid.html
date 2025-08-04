@@ -1,0 +1,30 @@
+<!-- Side-by-side content grid -->
+<div class="content-grid">
+  <!-- Left side: Playlists and Tracks -->
+  <div class="section">
+    <div id="playlists" style="display:block;">
+      <h2>Your Playlists</h2>
+      <ul id="playlist-list"></ul>
+    </div>
+
+    <div id="tracks" style="display:none;">
+      <button id="back-btn" style="margin-bottom:10px;">← Back to Playlists</button>
+      <h2>Playlist Tracks</h2>
+      <ul id="track-list"></ul>
+    </div>
+  </div>
+
+  <!-- Right side: Queue -->
+  <div class="section">
+    <div id="queue-section">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+        <h2>Current Queue <small style="font-size: 0.6em; color: #666; font-weight: normal;">(ordered by votes)</small></h2>
+        <button id="clear-queue-btn" onclick="clearQueue()" style="background-color: #e74c3c; display: none;">Clear Queue</button>
+      </div>
+      <ul id="queue"></ul>
+      <div id="queue-empty" style="display: none; text-align: center; color: #666; padding: 20px;">
+        No tracks in queue. Add some music! 🎵
+      </div>
+    </div>
+  </div>
+</div>

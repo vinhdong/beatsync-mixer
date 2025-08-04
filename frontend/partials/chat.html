@@ -1,0 +1,18 @@
+<!-- Floating Chat Box -->
+<div id="floating-chat">
+  <div id="chat-header" onclick="toggleChat()">
+    <span>💬 Chat</span>
+    <button id="chat-toggle">−</button>
+  </div>
+  <div id="chat-content">
+    <div id="chat-messages"></div>
+    <form id="chat-form" onsubmit="sendChatMessage(event)">
+      <input type="text" id="chat-input" placeholder="Type a message..." maxlength="200">
+      <button type="submit">Send</button>
+    </form>
+  </div>
+</div>
+
+<!-- TODO: Add voting system for queue items -->
+<!-- TODO: Add chat functionality -->
+<!-- TODO: Integrate Spotify Web Playback SDK for playback control -->
