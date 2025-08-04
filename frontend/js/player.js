@@ -232,6 +232,82 @@ function stopTrackEndDetection() {
   }
 }
 
+async function playTrackFromQueue(trackUri) {
+  if (!accessToken || !deviceId) {
+    alert('Spotify player not connected');
+    return;
+  }
+
+  // Find the track name from the queue
+  const trackElement = document.querySelector(`li[data-track-uri="${trackUri}"]`);
+  let trackName = trackUri.split(':').pop(); // fallback
+  
+  if (trackElement) {
+    const trackNameSpan = trackElement.querySelector('span:first-child');
+    if (trackNameSpan) {
+      trackName = trackNameSpan.textContent.trim();
+    }
+  }
+
+  try {
+    const response = await fetch('/playback/play', {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ 
+        track_uri: trackUri,
+        track_name: trackName,
+        device_id: deviceId 
+      })
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      console.error('Error playing track:', error);
+      
+      // Provide more specific error messages
+      if (response.status === 404) {
+        alert('No active device found. Make sure Spotify is open and try refreshing the page.');
+      } else if (error.error && error.error.includes('Premium')) {
+        alert('Spotify Premium is required for web playback. Please upgrade your account.');
+      } else {
+        alert(error.error || 'Failed to play track');
+      }
+    } else {
+      console.log('Successfully started playback');
+      
+      // DON'T remove the track immediately - let it stay in queue while playing
+      // The track will be removed when it finishes playing or when skipped
+    }
+  } catch (error) {
+    console.error('Error playing track:', error);
+    alert('Network error. Please check your connection and try again.');
+  }
+}
+
+// Remove track from queue after it's played
+async function removeTrackFromQueue(trackUri) {
+  try {
+    const response = await fetch(`/queue/remove/${encodeURIComponent(trackUri)}`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (response.ok) {
+      console.log('Track removed from queue:', trackUri);
+    } else {
+      console.log('Failed to remove track from queue:', trackUri);
+    }
+  } catch (error) {
+    console.error('Error removing track from queue:', error);
+  }
+}
+
 // Export functions
 window.initializeSpotifyPlayer = initializeSpotifyPlayer;
 window.togglePlayback = togglePlayback;
@@ -239,3 +315,5 @@ window.nextTrack = nextTrack;
 window.previousTrack = previousTrack;
 window.setVolume = setVolume;
 window.autoPlayNext = autoPlayNext;
+window.playTrackFromQueue = playTrackFromQueue;
+window.removeTrackFromQueue = removeTrackFromQueue;

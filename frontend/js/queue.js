@@ -43,13 +43,37 @@ async function refreshQueueDisplay() {
     queueCount = data.count || 0;
     updateQueueDisplay();
     
-    const queueList = document.getElementById('queue-list');
+    const queueList = document.getElementById('queue');
     if (queueList && data.queue) {
       queueList.innerHTML = '';
       data.queue.forEach(item => {
         const li = document.createElement('li');
-        li.textContent = item.track_name;
-        li.setAttribute('data-track-uri', item.track_uri);
+        const trackId = item.track_uri;
+        const safeTrackId = trackId.replace(/[^a-zA-Z0-9]/g, '_');
+        const timestamp = new Date(item.timestamp || Date.now()).getTime();
+        
+        li.setAttribute('data-track-uri', trackId);
+        li.setAttribute('data-timestamp', timestamp);
+        li.className = 'queue-item';
+        li.style.position = 'relative';
+        li.innerHTML = `
+          <div>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <span style="font-weight: bold;">${item.track_name || item.track_uri}</span>
+              <span class="vote-score" id="score-${safeTrackId}" style="background-color: #333; padding: 2px 8px; border-radius: 12px; font-size: 12px; color: #1db954;">Score: ${item.vote_score || 0}</span>
+            </div>
+            <small style="color: #666;">Added: ${new Date(item.timestamp || Date.now()).toLocaleTimeString()}</small>
+            <div class="vote-buttons">
+              <button class="vote-btn" onclick="voteTrack('${trackId}', 'up', this)">👍</button>
+              <span class="vote-count" id="up-${safeTrackId}">${item.upvotes || 0}</span>
+              <button class="vote-btn" onclick="voteTrack('${trackId}', 'down', this)">👎</button>
+              <span class="vote-count" id="down-${safeTrackId}">${item.downvotes || 0}</span>
+              ${window.userRole === 'host' ? `<button onclick="playTrackFromQueue('${trackId}')" style="background-color: #1db954; margin: 0 5px;">▶️ Play</button>` : ''}
+              <button class="recommendations-btn" onclick="loadRecs('${trackId}', '${safeTrackId}')">See Similar Tracks</button>
+            </div>
+            <div id="recs-${safeTrackId}" class="recommendations-list"></div>
+          </div>
+        `;
         queueList.appendChild(li);
       });
     }

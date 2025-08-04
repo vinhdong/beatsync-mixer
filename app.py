@@ -98,6 +98,13 @@ def create_app():
         user_id = session.get("user_id", "")
         display_name = session.get("display_name") or session.get("username", "Guest")
         
+        # Debug logging
+        print(f"=== DISPLAY NAME DEBUG ===")
+        print(f"Session display_name: {session.get('display_name')}")
+        print(f"Session username: {session.get('username')}")
+        print(f"Final display_name: {display_name}")
+        print(f"=== END DISPLAY NAME DEBUG ===")
+        
         # Inject JavaScript variables
         role_script = f"""
         <script>

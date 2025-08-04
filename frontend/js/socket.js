@@ -70,15 +70,15 @@ socket.on("queue_updated", data => {
 
 socket.on("track_added", data => {
   console.log('Track added:', data);
-  if (typeof loadQueue === 'function') {
-    loadQueue();
+  if (typeof refreshQueueDisplay === 'function') {
+    refreshQueueDisplay();
   }
 });
 
 socket.on("track_removed", data => {
   console.log('Track removed:', data);
-  if (typeof loadQueue === 'function') {
-    loadQueue();
+  if (typeof refreshQueueDisplay === 'function') {
+    refreshQueueDisplay();
   }
 });
 
@@ -91,8 +91,8 @@ socket.on("votes_updated", data => {
 
 socket.on("queue_cleared", () => {
   console.log('Queue cleared');
-  if (typeof loadQueue === 'function') {
-    loadQueue();
+  if (typeof refreshQueueDisplay === 'function') {
+    refreshQueueDisplay();
   }
 });
 

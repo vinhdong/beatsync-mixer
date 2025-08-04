@@ -147,8 +147,15 @@ function sendChatMessage(event) {
   if (!message) return;
   
   if (typeof socket !== 'undefined') {
+    // Debug logging to see what user info we have
+    console.log('Chat debug - window.displayName:', window.displayName);
+    console.log('Chat debug - window.userId:', window.userId);
+    console.log('Chat debug - window.userRole:', window.userRole);
+    
     // Use session user info instead of random currentUser
     const user = window.displayName || window.userId || 'Anonymous';
+    console.log('Chat debug - final user name:', user);
+    
     socket.emit('chat_message', {
       user: user,
       message: message
@@ -163,8 +170,8 @@ function initializeUI() {
   
   initializeRoleBasedUI();
   
-  if (typeof loadQueue === 'function') {
-    loadQueue();
+  if (typeof refreshQueueDisplay === 'function') {
+    refreshQueueDisplay();
   }
   
   if (typeof setupAutoSearch === 'function') {
@@ -182,16 +189,30 @@ function addRoleIndicator(role) {
     
     // Always show a container for user info
     const userContainer = document.createElement('div');
-    userContainer.style.cssText = 'font-size: 0.7em; color: #666; margin-top: 5px; display: flex; align-items: center; gap: 10px;';
+    userContainer.style.cssText = `
+      background: linear-gradient(135deg, #1db954, #1ed760);
+      color: white;
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 0.85em;
+      font-weight: 500;
+      margin: 10px 0;
+      box-shadow: 0 2px 8px rgba(29, 185, 84, 0.3);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      text-align: center;
+      justify-content: center;
+    `;
     
     // Show display name if available, otherwise show generic welcome
     if (window.displayName && window.displayName !== 'Guest') {
       const nameSpan = document.createElement('span');
-      nameSpan.textContent = `Welcome, ${window.displayName}!`;
+      nameSpan.innerHTML = `👋 Welcome, <strong>${window.displayName}</strong>!`;
       userContainer.appendChild(nameSpan);
     } else if (role === 'guest') {
       const nameSpan = document.createElement('span');
-      nameSpan.textContent = 'Welcome, Guest!';
+      nameSpan.innerHTML = '👋 Welcome, <strong>Guest</strong>!';
       userContainer.appendChild(nameSpan);
     }
     

@@ -9,6 +9,8 @@
   border-radius: 12px;
   box-shadow: 0 2px 4px rgba(0,0,0,0.1);
   margin-bottom: 30px;
+  min-width: 0; /* Allows container to shrink */
+  overflow: hidden; /* Prevents content overflow */
 }
 
 .search-container h2 {
@@ -61,6 +63,10 @@
   margin-top: 15px;
   box-shadow: 0 2px 8px rgba(0,0,0,0.1);
   display: none;
+  width: 100%; /* Constrain to parent width */
+  max-width: 100%; /* Ensure it never exceeds parent */
+  box-sizing: border-box; /* Include padding and border in width */
+  overflow: hidden; /* Hide any content that might overflow */
 }
 
 #search-results.show {
@@ -92,7 +98,8 @@
   transition: background-color 0.2s;
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start; /* Changed from center to flex-start for multi-line content */
+  gap: 15px; /* Consistent gap between elements */
 }
 
 .search-result-item:last-child {
@@ -104,19 +111,52 @@
 }
 
 .search-result-item .track-info {
-  flex-grow: 1;
+  flex: 1; /* Take available space but can shrink */
+  min-width: 0; /* Allows flex item to shrink below content size */
+  width: 0; /* Force the container to rely on flex for width */
+  overflow: hidden; /* Prevent any overflow from this container */
+  display: flex;
+  flex-direction: column; /* Stack children vertically */
+  gap: 2px; /* Small gap between lines */
+}
+
+/* Force vertical layout for track info - override any conflicting styles */
+#search-results .search-result-item .track-info {
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: flex-start !important;
+  max-width: calc(100% - 125px) !important; /* Force width constraint */
 }
 
 .search-result-item .track-name {
   font-weight: 600;
   color: #333;
-  margin-bottom: 4px;
   font-size: 1em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  width: 100%; /* Ensure it takes full width of parent */
+  box-sizing: border-box;
 }
 
-.search-result-item .track-details {
+.search-result-item .track-artist {
   color: #666;
   font-size: 0.9em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  width: 100%; /* Ensure it takes full width of parent */
+  box-sizing: border-box;
+}
+
+.search-result-item .track-album {
+  color: #888;
+  font-size: 0.85em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  width: 100%; /* Ensure it takes full width of parent */
+  box-sizing: border-box;
 }
 
 .search-result-item button {
@@ -129,7 +169,14 @@
   font-size: 0.9em;
   font-weight: 500;
   transition: background-color 0.2s;
-  min-width: 100px;
+  width: 110px; /* Fixed width instead of min-width */
+  flex-shrink: 0; /* Prevent button from shrinking */
+  white-space: nowrap; /* Prevent text wrapping in button */
+  align-self: center; /* Center the button vertically within its area */
+  text-align: center; /* Center the text within the button */
+  display: flex; /* Use flexbox for better centering */
+  align-items: center; /* Center vertically */
+  justify-content: center; /* Center horizontally */
 }
 
 .search-result-item button:hover {

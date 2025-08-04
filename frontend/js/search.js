@@ -97,12 +97,10 @@ function displaySearchResults(tracks) {
     li.className = 'search-result-item';
     
     li.innerHTML = `
-      <div style="flex-grow: 1;">
+      <div class="track-info">
         <div class="track-name">${track.name}</div>
-        <div class="track-details">
-          ${track.artist_names} • ${track.album}
-          ${track.duration_text ? ' • ' + track.duration_text : ''}
-        </div>
+        <div class="track-artist">${track.artist_names}${track.duration_text ? ' • ' + track.duration_text : ''}</div>
+        <div class="track-album">${track.album}</div>
       </div>
       <button onclick="addTrackToQueue('${track.uri}', '${track.name.replace(/'/g, "\\'")}', '${track.artist_names.replace(/'/g, "\\'")}')">
         Add to Queue
@@ -180,7 +178,55 @@ async function addTrackToQueue(trackUri, trackName, artistNames) {
   }
 }
 
+async function loadRecs(trackUri, safeTrackId) {
+  const recsContainer = document.getElementById(`recs-${safeTrackId}`);
+  const btn = event.target;
+  
+  // Toggle visibility if already loaded
+  if (recsContainer.classList.contains('visible')) {
+    recsContainer.classList.remove('visible');
+    btn.textContent = 'See Similar Tracks';
+    return;
+  }
+  
+  // Show container instantly with loading message
+  recsContainer.innerHTML = '<div class="recommendation-item" style="color: #666; padding: 10px; text-align: center;">⏳ Loading recommendations...</div>';
+  recsContainer.classList.add('visible');
+  btn.textContent = 'Hide Similar Tracks';
+  
+  // Load recommendations in background
+  try {
+    const response = await fetch(`/recommend/${encodeURIComponent(trackUri)}`);
+    
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    
+    const data = await response.json();
+    const recommendations = data.recommendations || [];
+    
+    if (recommendations.length === 0) {
+      const message = data.message || 'No similar tracks found for this song.';
+      recsContainer.innerHTML = `<div class="recommendation-item" style="color: #666; font-style: italic; padding: 10px; text-align: center;">${message}</div>`;
+    } else {
+      recsContainer.innerHTML = recommendations.map(rec => `
+        <div class="recommendation-item" style="padding: 8px; border-bottom: 1px solid #444; margin-bottom: 5px;">
+          <a href="${rec.url}" target="_blank" class="recommendation-link" style="color: #1db954; text-decoration: none;">
+            <strong>${rec.artist}</strong> — ${rec.title}
+          </a>
+          ${rec.source ? `<small style="color: #666; margin-left: 10px; font-size: 10px;">(${rec.source})</small>` : ''}
+        </div>
+      `).join('');
+    }
+    
+  } catch (error) {
+    console.error('Error loading recommendations:', error);
+    recsContainer.innerHTML = '<div class="recommendation-item" style="color: #e74c3c; padding: 10px; text-align: center;">Error loading recommendations. Please try again.</div>';
+  }
+}
+
 // Export functions
 window.setupAutoSearch = setupAutoSearch;
 window.searchMusic = searchMusic;
 window.addTrackToQueue = addTrackToQueue;
+window.loadRecs = loadRecs;
