@@ -1,0 +1,165 @@
+/* Queue Section Styles */
+.queue-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+}
+
+.queue-header h2 small {
+  font-size: 0.6em;
+  color: #666;
+  font-weight: normal;
+}
+
+#clear-queue-btn {
+  background-color: #e74c3c;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9em;
+  font-weight: 500;
+  transition: background-color 0.2s;
+  display: none;
+}
+
+#clear-queue-btn:hover {
+  background-color: #c0392b;
+}
+
+#queue-empty {
+  display: none;
+  text-align: center;
+  color: #666;
+  padding: 20px;
+  font-style: italic;
+}
+
+/* Queue item states */
+#now-playing {
+  border-left: 4px solid #1db954;
+}
+
+.next-to-play {
+  border-left: 4px solid #1db954 !important;
+  background: linear-gradient(90deg, rgba(29, 185, 84, 0.1) 0%, rgba(255, 255, 255, 0.05) 100%) !important;
+}
+
+.next-to-play::before {
+  content: "▶️ NEXT";
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: #1db954;
+  color: white;
+  padding: 2px 6px;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: bold;
+}
+
+.queue-item {
+  position: relative;
+  transition: all 0.5s cubic-bezier(0.4, 0.0, 0.2, 1);
+  transform: translateY(0);
+}
+
+.queue-item.moving-up {
+  animation: slideUp 0.6s cubic-bezier(0.4, 0.0, 0.2, 1);
+}
+
+.queue-item.moving-down {
+  animation: slideDown 0.6s cubic-bezier(0.4, 0.0, 0.2, 1);
+}
+
+.queue-item.highlight-new-vote {
+  animation: pulseVote 0.4s ease-in-out;
+}
+
+/* Vote buttons */
+.vote-buttons {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-top: 5px;
+}
+
+.vote-btn {
+  background: none;
+  border: none;
+  font-size: 1.2em;
+  cursor: pointer;
+  padding: 5px;
+  border-radius: 3px;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.vote-btn:hover {
+  background-color: #f0f0f0;
+  transform: scale(1.1);
+}
+
+.vote-btn:active {
+  transform: scale(0.9);
+}
+
+.vote-btn.just-voted {
+  animation: buttonPulse 0.3s ease-out;
+}
+
+.vote-count {
+  font-size: 0.9em;
+  color: #666;
+}
+
+/* Recommendations */
+.recommendations-btn {
+  background-color: #3498db;
+  color: white;
+  border: none;
+  padding: 5px 10px;
+  border-radius: 15px;
+  font-size: 0.8em;
+  cursor: pointer;
+  transition: background-color 0.3s;
+  margin-left: 10px;
+}
+
+.recommendations-btn:hover {
+  background-color: #2980b9;
+}
+
+.recommendations-list {
+  margin-top: 10px;
+  padding: 10px;
+  background-color: #f8f9fa;
+  border-radius: 5px;
+  border-left: 3px solid #3498db;
+  display: none;
+}
+
+.recommendations-list.visible {
+  display: block;
+}
+
+.recommendation-item {
+  padding: 5px 0;
+  border-bottom: 1px solid #dee2e6;
+}
+
+.recommendation-item:last-child {
+  border-bottom: none;
+}
+
+.recommendation-link {
+  color: #3498db;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.recommendation-link:hover {
+  text-decoration: underline;
+}

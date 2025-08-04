@@ -1,0 +1,101 @@
+/* Login Section */
+#login {
+  text-align: center;
+  margin: 40px 0;
+}
+
+#login a {
+  display: inline-block;
+  background-color: #1db954;
+  color: white;
+  padding: 12px 24px;
+  text-decoration: none;
+  border-radius: 50px;
+  font-weight: bold;
+  transition: background-color 0.3s;
+}
+
+#login a:hover {
+  background-color: #1ed760;
+}
+
+/* Role Selection Styles */
+.role-selection {
+  text-align: center;
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 40px 20px;
+}
+
+.role-selection h2 {
+  color: white;
+  margin-bottom: 30px;
+  font-size: 1.5em;
+}
+
+.role-options {
+  display: flex;
+  gap: 20px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.role-option {
+  flex: 1;
+  min-width: 160px;
+  max-width: 200px;
+}
+
+.role-btn {
+  display: block;
+  padding: 20px 15px;
+  border-radius: 12px;
+  text-decoration: none;
+  border: none;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-family: inherit;
+  font-size: 1em;
+  width: 100%;
+  position: relative;
+  overflow: hidden;
+}
+
+.role-btn small {
+  display: block;
+  font-size: 0.8em;
+  margin-top: 8px;
+  opacity: 0.9;
+}
+
+.host-btn {
+  background: linear-gradient(135deg, #1db954 0%, #1ed760 100%);
+  color: white;
+}
+
+.listener-btn {
+  background: linear-gradient(135deg, #2196F3 0%, #21CBF3 100%);
+  color: white;
+}
+
+.guest-btn {
+  background: linear-gradient(135deg, #9C27B0 0%, #E91E63 100%);
+  color: white;
+}
+
+.role-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(0,0,0,0.3);
+}
+
+.host-btn:hover {
+  background: linear-gradient(135deg, #1ed760 0%, #1db954 100%);
+}
+
+.listener-btn:hover {
+  background: linear-gradient(135deg, #21CBF3 0%, #2196F3 100%);
+}
+
+.guest-btn:hover {
+  background: linear-gradient(135deg, #E91E63 0%, #9C27B0 100%);
+}
