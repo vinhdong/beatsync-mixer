@@ -295,7 +295,7 @@ def get_queue_snapshot(app=None):
 
 def update_queue_snapshot(app=None):
     """Update the queue snapshot in cache from database"""
-    from db import get_db, QueueItem, Vote
+    from backend.models.models import get_db, QueueItem, Vote
     
     try:
         with get_db() as db:

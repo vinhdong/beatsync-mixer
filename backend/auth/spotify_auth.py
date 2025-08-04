@@ -8,8 +8,8 @@ import time
 import threading
 from datetime import datetime, timezone
 from flask import Blueprint, request, session, redirect, jsonify
-from spotify_api import spotify_oauth, exchange_token, fetch_user_profile, fetch_playlists
-from cache import cache_playlists_async, simplify_playlists_data
+from backend.api.spotify import spotify_oauth, exchange_token, fetch_user_profile, fetch_playlists
+from backend.utils.cache import cache_playlists_async, simplify_playlists_data
 
 
 auth_bp = Blueprint('auth', __name__)
@@ -36,8 +36,8 @@ def login():
             
             # Also clear the queue for a fresh start
             try:
-                from db import get_db, QueueItem, Vote
-                from cache import clear_currently_playing, clear_queue_snapshot
+                from backend.models.models import get_db, QueueItem, Vote
+                from backend.utils.cache import clear_currently_playing, clear_queue_snapshot
                 with get_db() as db:
                     # Clear all votes and queue items
                     db.query(Vote).delete()

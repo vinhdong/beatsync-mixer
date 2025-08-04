@@ -4,8 +4,8 @@ Handles music search functionality without requiring Spotify user authentication
 """
 
 from flask import Blueprint, request, jsonify, session
-from spotify_api import search_tracks
-from db import get_db, QueueItem
+from backend.api.spotify import search_tracks
+from backend.models.models import get_db, QueueItem
 
 
 search_bp = Blueprint('search', __name__)
@@ -64,7 +64,7 @@ def add_to_queue():
             print(f"SUCCESS: Added track to database: {track_name}")
             
             # Emit event to all clients
-            from sockets import socketio
+            from backend.websockets.handlers import socketio
             socketio.emit('track_added', {
                 'track_uri': track_uri,
                 'track_name': track_name,

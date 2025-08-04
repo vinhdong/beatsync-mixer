@@ -5,8 +5,8 @@ Handles role selection, host status, and session control.
 
 import os
 from flask import Blueprint, session, request, redirect, jsonify
-from db import get_db, QueueItem, Vote, ChatMessage
-from cache import invalidate_playlist_cache, clear_currently_playing, clear_queue_snapshot
+from backend.models.models import get_db, QueueItem, Vote, ChatMessage
+from backend.utils.cache import invalidate_playlist_cache, clear_currently_playing, clear_queue_snapshot
 from datetime import datetime, timezone
 
 

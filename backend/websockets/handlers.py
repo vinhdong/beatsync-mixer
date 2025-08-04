@@ -5,8 +5,8 @@ Handles real-time communication for queue, voting, and chat.
 
 from flask import session, request
 from flask_socketio import SocketIO, emit
-from db import get_db, QueueItem, Vote, ChatMessage
-from cache import get_currently_playing, get_queue_snapshot, update_queue_snapshot
+from backend.models.models import get_db, QueueItem, Vote, ChatMessage
+from backend.utils.cache import get_currently_playing, get_queue_snapshot, update_queue_snapshot
 
 
 # SocketIO instance will be imported from app factory

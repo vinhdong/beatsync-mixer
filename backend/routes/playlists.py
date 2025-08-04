@@ -6,8 +6,8 @@ Handles playlist and track fetching with optimized caching.
 import time
 import threading
 from flask import Blueprint, session, jsonify, request
-from spotify_api import fetch_playlists, fetch_playlist_tracks
-from cache import get_cached_playlists, cache_playlists_async, simplify_playlists_data, get_cached_tracks, set_cached_tracks
+from backend.api.spotify import fetch_playlists, fetch_playlist_tracks
+from backend.utils.cache import get_cached_playlists, cache_playlists_async, simplify_playlists_data, get_cached_tracks, set_cached_tracks
 
 
 playlists_bp = Blueprint('playlists', __name__)

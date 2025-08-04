@@ -4,8 +4,8 @@ Handles Spotify playback, device management, and status.
 """
 
 from flask import Blueprint, session, request, jsonify, abort
-from spotify_api import start_playback, pause_playback, get_devices, get_playback_state
-from cache import set_currently_playing, clear_currently_playing
+from backend.api.spotify import start_playback, pause_playback, get_devices, get_playback_state
+from backend.utils.cache import set_currently_playing, clear_currently_playing
 
 
 playback_bp = Blueprint('playback', __name__)
@@ -105,7 +105,7 @@ def pause_track():
         
         if success:
             # Update currently playing track in cache to paused
-            from cache import get_currently_playing
+            from backend.utils.cache import get_currently_playing
             currently_playing = get_currently_playing()
             if currently_playing:
                 set_currently_playing(

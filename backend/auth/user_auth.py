@@ -5,7 +5,7 @@ Handles user registration, login, and session management without Spotify depende
 
 import re
 from flask import Blueprint, request, session, jsonify, render_template_string
-from db import get_db, User
+from backend.models.models import get_db, User
 
 
 user_auth_bp = Blueprint('user_auth', __name__)
@@ -447,6 +447,7 @@ def login():
             # Set session
             session['user_id'] = user.id
             session['username'] = user.username
+            session['display_name'] = user.username  # Add display_name for chat
             session['role'] = 'host'  # Since only hosts need to login
             session['authenticated'] = True
             

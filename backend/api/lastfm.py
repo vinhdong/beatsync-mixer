@@ -1,19 +1,18 @@
 """
-Recommendation routes for BeatSync Mixer.
-Handles Last.fm integration for music recommendations.
+Last.fm API integration for BeatSync Mixer.
+Handles music recommendations and track similarity.
 """
 
 import os
 import requests
-from flask import Blueprint, request, jsonify
-from db import get_db, QueueItem
 
 
-recommend_bp = Blueprint('recommend', __name__)
-
-
-def manual_lastfm_get_similar(artist, title, api_key, limit=5):
+def get_similar_tracks(artist, title, limit=5):
     """Get similar tracks from Last.fm API with fallback methods"""
+    api_key = os.getenv("LASTFM_API_KEY")
+    if not api_key:
+        print("❌ Last.fm API key not configured")
+        return []
     
     params = {
         'method': 'track.getsimilar',
@@ -39,7 +38,6 @@ def manual_lastfm_get_similar(artist, title, api_key, limit=5):
         
         if response.status_code == 200:
             data = response.json()
-            # Remove verbose logging for faster processing
             
             if 'error' in data:
                 print(f"❌ Last.fm API error: {data.get('message', 'Unknown error')}")
@@ -178,108 +176,34 @@ def manual_lastfm_get_similar(artist, title, api_key, limit=5):
     return []
 
 
-@recommend_bp.route("/<track_uri>")
-def recommend(track_uri):
-    """Get Last.fm recommendations for a queued track"""
+def get_track_info(artist, title):
+    """Get track information from Last.fm API"""
+    api_key = os.getenv("LASTFM_API_KEY")
+    if not api_key:
+        return None
+    
+    params = {
+        'method': 'track.getInfo',
+        'artist': artist,
+        'track': title,
+        'api_key': api_key,
+        'format': 'json'
+    }
+    
     try:
-        with get_db() as db:
-            # Find the track in the queue
-            queue_item = db.query(QueueItem).filter_by(track_uri=track_uri).first()
-            
-            if not queue_item:
-                return jsonify({"error": "Track not found in queue"}), 404
-            
-            # Extract artist and title from track name (basic parsing)
-            track_name = queue_item.track_name
-            
-            # Parse track name format - it appears to be "Title - Artist1, Artist2, etc."
-            if " - " in track_name:
-                parts = track_name.split(" - ", 1)
-                title = parts[0].strip()
-                artists_part = parts[1].strip()
+        response = requests.get(
+            "http://ws.audioscrobbler.com/2.0/",
+            params=params,
+            timeout=(3, 5),
+            headers={'User-Agent': 'BeatSyncMixer/1.0'}
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            if 'error' not in data:
+                return data.get('track', {})
                 
-                # Take the first artist from the list
-                if ", " in artists_part:
-                    artist = artists_part.split(", ")[0].strip()
-                else:
-                    artist = artists_part.strip()
-            else:
-                # Fallback: use track name as title, no artist
-                title = track_name.strip()
-                artist = "Unknown Artist"
-            
-            print(f"🎵 Parsed track: Title='{title}', Artist='{artist}' from '{track_name}'")
-            
-            if not title:
-                return jsonify({"error": "Could not parse title from track name"}), 400
-            
-            # Get Last.fm recommendations using manual IP-based client
-            api_key = os.getenv("LASTFM_API_KEY")
-            if not api_key:
-                return jsonify({"error": "Last.fm API key not configured"}), 500
-            
-            recommendations = manual_lastfm_get_similar(artist, title, api_key, limit=3)
-            
-            if not recommendations:
-                return jsonify({
-                    "recommendations": [],
-                    "message": "No similar tracks found for this song.",
-                    "source": "Last.fm",
-                    "original_track": {
-                        "artist": artist,
-                        "title": title,
-                        "uri": track_uri
-                    }
-                })
-            
-            print(f"✅ Returning {len(recommendations)} recommendations for {artist} - {title}")
-            
-            return jsonify({
-                "recommendations": recommendations,
-                "source": "Last.fm",
-                "original_track": {
-                    "artist": artist,
-                    "title": title,
-                    "uri": track_uri
-                }
-            })
-            
     except Exception as e:
-        print(f"Recommendation API error for {track_uri}: {str(e)}")
-        return jsonify({"error": "Failed to get recommendations"}), 500
-
-
-@recommend_bp.route("/direct")
-def recommend_direct():
-    """Test endpoint for Last.fm recommendations (accepts artist and title directly)"""
-    try:
-        artist = request.args.get('artist')
-        title = request.args.get('title')
-        
-        if not artist or not title:
-            return jsonify({"error": "Missing artist or title parameter"}), 400
-        
-        # Get Last.fm recommendations using manual IP-based client
-        api_key = os.getenv("LASTFM_API_KEY")
-        if not api_key:
-            return jsonify({"error": "Last.fm API key not configured"}), 500
-        
-        recommendations = manual_lastfm_get_similar(artist, title, api_key, limit=3)
-        
-        if not recommendations:
-            return jsonify({
-                "recommendations": [],
-                "message": "No similar tracks found for this song.",
-                "source": "Last.fm"
-            })
-        
-        print(f"✅ Returning {len(recommendations)} recommendations for {artist} - {title}")
-        
-        return jsonify({
-            "recommendations": recommendations,
-            "source": "Last.fm"
-        })
-        
-    except Exception as e:
-        print(f"Direct recommendation API error for {artist} - {title}: {str(e)}")
-        return jsonify({"error": "Failed to get recommendations"}), 500
+        print(f"Error getting track info from Last.fm: {e}")
+    
+    return None

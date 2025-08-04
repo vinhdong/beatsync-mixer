@@ -64,17 +64,46 @@ function continueAsGuest() {
 
 function initializeRoleBasedUI() {
   const role = window.userRole;
+  const loginDiv = document.getElementById('login');
+  const playlistsDiv = document.getElementById('playlists');
+  const tracksDiv = document.getElementById('tracks');
+  const searchSection = document.getElementById('search-section');
+  const clearQueueBtn = document.getElementById('clear-queue-btn');
+  const restartBtn = document.getElementById('host-restart-btn');
   
-  if (role !== 'host') {
-    const playlistsDiv = document.getElementById('playlists');
-    const tracksDiv = document.getElementById('tracks');
-    if (playlistsDiv) playlistsDiv.style.display = 'none';
-    if (tracksDiv) tracksDiv.style.display = 'none';
+  // Remove any existing role indicator first
+  if (typeof removeRoleIndicator === 'function') {
+    removeRoleIndicator();
   }
   
-  const clearQueueBtn = document.getElementById('clear-queue-btn');
-  if (clearQueueBtn) {
-    clearQueueBtn.style.display = role === 'host' ? 'inline-block' : 'none';
+  if (role === 'host') {
+    // Host sees everything: search + playlists + restart button
+    if (searchSection) searchSection.style.display = 'block';
+    if (playlistsDiv) playlistsDiv.style.display = 'block';
+    if (tracksDiv) tracksDiv.style.display = 'none';
+    if (clearQueueBtn) clearQueueBtn.style.display = 'inline-block';
+    if (restartBtn) {
+      restartBtn.style.display = 'inline-block';
+      restartBtn.style.visibility = 'visible';
+    }
+    
+    // Add role indicator
+    if (typeof addRoleIndicator === 'function') {
+      addRoleIndicator('host');
+    }
+    
+  } else {
+    // Listeners and guests see only search, no restart button
+    if (searchSection) searchSection.style.display = 'block';
+    if (playlistsDiv) playlistsDiv.style.display = 'none';
+    if (tracksDiv) tracksDiv.style.display = 'none';
+    if (clearQueueBtn) clearQueueBtn.style.display = 'none';
+    if (restartBtn) restartBtn.style.display = 'none';
+    
+    // Add role indicator for listeners and guests
+    if (typeof addRoleIndicator === 'function') {
+      addRoleIndicator(role || 'guest');
+    }
   }
 }
 

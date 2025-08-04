@@ -8,19 +8,19 @@ from flask import Flask, session, redirect
 from datetime import datetime, timezone
 
 # Import configuration and initialization functions
-from config import init_app
-from db import init_db
-from sockets import init_socketio
+from backend.utils.config import init_app
+from backend.models.models import init_db
+from backend.websockets.handlers import init_socketio
 
 # Import blueprints
-from auth import auth_bp
-from playlists import playlists_bp
-from recommend import recommend_bp
-from queue_routes import queue_bp
-from playback import playback_bp
-from session_management import session_mgmt_bp
-from user_auth import user_auth_bp
-from search import search_bp
+from backend.auth.spotify_auth import auth_bp
+from backend.routes.playlists import playlists_bp
+from backend.routes.recommend import recommend_bp
+from backend.routes.queue import queue_bp
+from backend.routes.playback import playback_bp
+from backend.routes.session import session_mgmt_bp
+from backend.auth.user_auth import user_auth_bp
+from backend.routes.search import search_bp
 
 
 def create_app():
@@ -96,7 +96,7 @@ def create_app():
         # Inject user role and info into the HTML
         role = user_role or session.get("role", "guest")  # Use the validated user_role
         user_id = session.get("user_id", "")
-        display_name = session.get("display_name", "Guest")
+        display_name = session.get("display_name") or session.get("username", "Guest")
         
         # Inject JavaScript variables
         role_script = f"""

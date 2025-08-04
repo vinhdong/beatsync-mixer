@@ -6,9 +6,9 @@ Handles queue operations, voting, and auto-play functionality.
 import time
 import threading
 from flask import Blueprint, session, request, jsonify
-from db import get_db, QueueItem, Vote
-from spotify_api import start_playback
-from cache import clear_queue_snapshot
+from backend.models.models import get_db, QueueItem, Vote
+from backend.api.spotify import start_playback
+from backend.utils.cache import clear_queue_snapshot
 
 
 queue_bp = Blueprint('queue', __name__)
@@ -183,7 +183,7 @@ def auto_play_next():
             return jsonify({"error": "Failed to start playback"}), 500
         
         # SUCCESS! Track is now playing - update currently playing cache
-        from cache import set_currently_playing
+        from backend.utils.cache import set_currently_playing
         set_currently_playing(track_uri, next_track['track_name'], is_playing=True, device_id=device_id)
         print(f"Updated currently playing cache: {next_track['track_name']}")
         

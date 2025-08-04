@@ -113,13 +113,12 @@ function updateProgress(position, trackDuration) {
 }
 
 function toggleChat() {
-  const chatSection = document.getElementById('chat-section');
-  const toggleBtn = document.getElementById('chat-toggle-btn');
+  const chatBox = document.getElementById('floating-chat');
+  const toggleBtn = document.getElementById('chat-toggle');
   
-  if (chatSection && toggleBtn) {
-    const isVisible = chatSection.style.display !== 'none';
-    chatSection.style.display = isVisible ? 'none' : 'block';
-    toggleBtn.textContent = isVisible ? 'Show Chat' : 'Hide Chat';
+  if (chatBox && toggleBtn) {
+    chatBox.classList.toggle('minimized');
+    toggleBtn.textContent = chatBox.classList.contains('minimized') ? '+' : '−';
   }
 }
 
@@ -148,9 +147,11 @@ function sendChatMessage(event) {
   if (!message) return;
   
   if (typeof socket !== 'undefined') {
+    // Use session user info instead of random currentUser
+    const user = window.displayName || window.userId || 'Anonymous';
     socket.emit('chat_message', {
-      message: message,
-      user: window.displayName || 'Anonymous'
+      user: user,
+      message: message
     });
   }
   
@@ -171,6 +172,46 @@ function initializeUI() {
   }
 }
 
+function addRoleIndicator(role) {
+  const h1 = document.querySelector('h1');
+  if (h1 && !document.querySelector('.role-indicator')) {
+    const roleSpan = document.createElement('span');
+    roleSpan.className = 'role-indicator';
+    roleSpan.textContent = role.toUpperCase();
+    h1.appendChild(roleSpan);
+    
+    // Always show a container for user info
+    const userContainer = document.createElement('div');
+    userContainer.style.cssText = 'font-size: 0.7em; color: #666; margin-top: 5px; display: flex; align-items: center; gap: 10px;';
+    
+    // Show display name if available, otherwise show generic welcome
+    if (window.displayName && window.displayName !== 'Guest') {
+      const nameSpan = document.createElement('span');
+      nameSpan.textContent = `Welcome, ${window.displayName}!`;
+      userContainer.appendChild(nameSpan);
+    } else if (role === 'guest') {
+      const nameSpan = document.createElement('span');
+      nameSpan.textContent = 'Welcome, Guest!';
+      userContainer.appendChild(nameSpan);
+    }
+    
+    h1.parentNode.insertBefore(userContainer, h1.nextSibling);
+  }
+}
+
+function removeRoleIndicator() {
+  const existingIndicator = document.querySelector('.role-indicator');
+  if (existingIndicator) {
+    existingIndicator.remove();
+  }
+  
+  // Also remove the user container
+  const h1 = document.querySelector('h1');
+  if (h1 && h1.nextElementSibling && h1.nextElementSibling.style.fontSize === '0.7em') {
+    h1.nextElementSibling.remove();
+  }
+}
+
 // Export functions
 window.showNotification = showNotification;
 window.updateConnectionStatus = updateConnectionStatus;
@@ -183,3 +224,5 @@ window.toggleChat = toggleChat;
 window.displayChatMessage = displayChatMessage;
 window.sendChatMessage = sendChatMessage;
 window.initializeUI = initializeUI;
+window.addRoleIndicator = addRoleIndicator;
+window.removeRoleIndicator = removeRoleIndicator;
