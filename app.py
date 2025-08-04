@@ -19,6 +19,8 @@ from recommend import recommend_bp
 from queue_routes import queue_bp
 from playback import playback_bp
 from session_management import session_mgmt_bp
+from user_auth import user_auth_bp
+from search import search_bp
 
 
 def create_app():
@@ -46,6 +48,8 @@ def create_app():
     app.register_blueprint(queue_bp, url_prefix="/queue")
     app.register_blueprint(playback_bp, url_prefix="/playback")
     app.register_blueprint(session_mgmt_bp)
+    app.register_blueprint(user_auth_bp, url_prefix="/user_auth")
+    app.register_blueprint(search_bp, url_prefix="/search")
     
     # Health check route
     @app.route("/health")
@@ -77,10 +81,10 @@ def create_app():
             print(f"Invalid role found: '{user_role}', redirecting to select-role")
             return redirect("/select-role?error=invalid_role")
         
-        # For hosts, also check if they have access token
-        if user_role == 'host' and not session.get('access_token'):
-            print(f"Host role but no access token, redirecting to re-authenticate")
-            return redirect("/select-role?error=auth_expired")
+        # For hosts, check if they are authenticated with our new system
+        if user_role == 'host' and not session.get('authenticated'):
+            print(f"Host role but not authenticated with new system, redirecting to select-role")
+            return redirect("/select-role?error=auth_required")
         
         print(f"Valid session found for role: {user_role}, serving main page")
         

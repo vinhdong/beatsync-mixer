@@ -1486,522 +1486,297 @@ async function loadRecs(trackUri, safeTrackId) {
   }
 }
 
-// Role-based UI initialization
-function initializeRoleBasedUI() {
-  const role = window.userRole || 'guest';
-  console.log('Initializing UI for role:', role);
+// Music Search Functionality
+let searchResults = [];
+let searchTimeout = null;
+
+// Auto-search with debouncing
+function setupAutoSearch() {
+  const searchInput = document.getElementById('search-input');
+  if (!searchInput) return;
   
-  // Update UI based on role
-  if (role === 'guest') {
-    // Show guest-friendly UI
-    console.log('Setting up guest UI - can vote and chat');
+  searchInput.addEventListener('input', function() {
+    const query = this.value.trim();
     
-    // Hide login section for guests (they can participate without auth)
-    const loginDiv = document.getElementById('login');
-    if (loginDiv) {
-      loginDiv.style.display = 'none';
+    // Clear previous timeout
+    if (searchTimeout) {
+      clearTimeout(searchTimeout);
     }
     
-    // Show all interactive features for guests
-    document.getElementById('queue-section').style.display = 'block';
-    document.getElementById('floating-chat').style.display = 'block';
-    
-    // Hide host-only controls for guests
-    const clearQueueBtn = document.getElementById('clear-queue-btn');
-    if (clearQueueBtn) {
-      clearQueueBtn.style.display = 'none';
+    // Hide results if query is empty
+    if (!query) {
+      document.getElementById('search-results').style.display = 'none';
+      return;
     }
     
-    // Hide restart button for guests
-    const restartBtn = document.getElementById('host-restart-btn');
-    if (restartBtn) {
-      restartBtn.style.display = 'none';
-    }
-    
-    // Hide playback controls for guests (they can only view what's playing)
-    const playbackControls = document.getElementById('playback-controls');
-    if (playbackControls) {
-      playbackControls.style.display = 'none';
-    }
-    
-    const volumeControl = document.getElementById('volume-control');
-    if (volumeControl) {
-      volumeControl.style.display = 'none';
-    }
-    
-    // Show role indicator for guests
-    addRoleIndicator('guest');
-    
-    // Add guest welcome message
-    addGuestWelcomeMessage();
-    
-  } else if (role === 'listener') {
-    // Hide host-only controls for listeners
-    const clearQueueBtn = document.getElementById('clear-queue-btn');
-    if (clearQueueBtn) {
-      clearQueueBtn.style.display = 'none';
-    }
-    
-    // Hide restart button for listeners
-    const restartBtn = document.getElementById('host-restart-btn');
-    if (restartBtn) {
-      restartBtn.style.display = 'none';
-    }
-    
-    // Hide playback controls for listeners (they can only view what's playing)
-    const playbackControls = document.getElementById('playback-controls');
-    if (playbackControls) {
-      playbackControls.style.display = 'none';
-    }
-    
-    const volumeControl = document.getElementById('volume-control');
-    if (volumeControl) {
-      volumeControl.style.display = 'none';
-    }
-    
-    // Update playback section title to indicate view-only
-    const playbackTitle = document.querySelector('#playback-section h3');
-    if (playbackTitle) {
-      playbackTitle.textContent = '🎵 Now Playing (View Only)';
-    }
-    
-    // Hide login section for listeners
-    const loginDiv = document.getElementById('login');
-    if (loginDiv) {
-      console.log('Hiding login div for listener');
-      loginDiv.style.display = 'none';
-      loginDiv.style.visibility = 'hidden';
-      loginDiv.style.height = '0px';
-      loginDiv.style.overflow = 'hidden';
-    }
-    
-    // Also hide any role selection elements
-    const roleSelection = document.querySelector('.role-selection');
-    if (roleSelection) {
-      console.log('Hiding role selection for listener');
-      roleSelection.style.display = 'none';
-    }
-    
-    // Show role indicator
-    addRoleIndicator('listener');
-  } else if (role === 'host') {
-    // Show all controls for hosts
-    console.log('Setting up host UI - restart button should be visible');
-    
-    // Force hide login/role selection for authenticated hosts
-    const loginDiv = document.getElementById('login');
-    if (loginDiv) {
-      console.log('Hiding login div for host');
-      loginDiv.style.display = 'none';
-      loginDiv.style.visibility = 'hidden';
-      loginDiv.style.height = '0px';
-      loginDiv.style.overflow = 'hidden';
-    }
-    
-    // Also hide any other login-related elements that might be causing gaps
-    const roleSelection = document.querySelector('.role-selection');
-    if (roleSelection) {
-      console.log('Hiding role selection for host');
-      roleSelection.style.display = 'none';
-    }
-    
-    // Show host-only controls for hosts
-    const clearQueueBtn = document.getElementById('clear-queue-btn');
-    if (clearQueueBtn) {
-      clearQueueBtn.style.display = 'inline-block';
-    }
-    
-    // Ensure restart button is visible for hosts
-    const restartBtn = document.getElementById('host-restart-btn');
-    if (restartBtn) {
-      console.log('Restart button found, ensuring visibility');
-      restartBtn.style.display = 'inline-block';
-      restartBtn.style.visibility = 'visible';
-    } else {
-      console.error('Restart button not found!');
-    }
-    
-    // Show role indicator
-    addRoleIndicator('host');
-  }
-}
-
-function addRoleIndicator(role) {
-  const h1 = document.querySelector('h1');
-  if (h1 && !document.querySelector('.role-indicator')) {
-    const roleSpan = document.createElement('span');
-    roleSpan.className = 'role-indicator';
-    roleSpan.style.cssText = 'font-size: 0.6em; background: #1db954; color: white; padding: 4px 8px; border-radius: 12px; margin-left: 10px;';
-    roleSpan.textContent = role.toUpperCase();
-    h1.appendChild(roleSpan);
-    
-    // Always show a container for user info and logout button
-    const userContainer = document.createElement('div');
-    userContainer.style.cssText = 'font-size: 0.7em; color: #666; margin-top: 5px; display: flex; align-items: center; gap: 10px;';
-    
-    // Show display name if available, otherwise show generic welcome
-    if (window.displayName && window.displayName !== 'Guest') {
-      const nameSpan = document.createElement('span');
-      nameSpan.textContent = `Welcome, ${window.displayName}!`;
-      userContainer.appendChild(nameSpan);
-    } else if (role === 'guest') {
-      const nameSpan = document.createElement('span');
-      nameSpan.textContent = 'Welcome, Guest!';
-      userContainer.appendChild(nameSpan);
-    }
-    
-    // Add logout/role switch button for all roles
-    if (role === 'host') {
-      const signOutBtn = document.createElement('button');
-      signOutBtn.textContent = '🚪 Sign Out as Host';
-      signOutBtn.style.cssText = `
-        font-size: 1em; 
-        background: #e74c3c; 
-        color: white; 
-        border: none; 
-        padding: 8px 12px; 
-        border-radius: 4px; 
-        cursor: pointer;
-        transition: background-color 0.3s;
-      `;
-      signOutBtn.onmouseover = () => signOutBtn.style.backgroundColor = '#c0392b';
-      signOutBtn.onmouseout = () => signOutBtn.style.backgroundColor = '#e74c3c';
-      signOutBtn.onclick = signOutAsHost;
-      userContainer.appendChild(signOutBtn);
-    } else {
-      // Add logout/role switch button for listeners and guests
-      const switchBtn = document.createElement('button');
-      switchBtn.textContent = role === 'guest' ? '🔑 Login or Switch Role' : '🔄 Switch Role';
-      switchBtn.style.cssText = `
-        font-size: 1em; 
-        background: #1db954; 
-        color: white; 
-        border: none; 
-        padding: 8px 12px; 
-        border-radius: 4px; 
-        cursor: pointer;
-        transition: background-color 0.3s;
-      `;
-      switchBtn.onmouseover = () => switchBtn.style.backgroundColor = '#1ed760';
-      switchBtn.onmouseout = () => switchBtn.style.backgroundColor = '#1db954';
-      switchBtn.onclick = () => {
-        window.location.href = '/logout';
-      };
-      userContainer.appendChild(switchBtn);
-    }
-    
-    h1.appendChild(userContainer);
-  }
-}
-
-function addGuestWelcomeMessage() {
-  const h1 = document.querySelector('h1');
-  if (h1 && !document.querySelector('.guest-welcome')) {
-    const welcomeDiv = document.createElement('div');
-    welcomeDiv.className = 'guest-welcome';
-    welcomeDiv.style.cssText = `
-      background: linear-gradient(135deg, rgba(156, 39, 176, 0.1), rgba(233, 30, 99, 0.1));
-      padding: 20px;
-      border-radius: 12px;
-      margin: 20px 0;
-      border: 1px solid rgba(156, 39, 176, 0.3);
-      font-size: 0.95em;
-      color: white;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-    `;
-    welcomeDiv.innerHTML = `
-      <div style="text-align: center;">
-        <strong style="font-size: 1.1em;">👋 Welcome, Guest!</strong><br><br>
-        <div style="display: flex; justify-content: space-around; flex-wrap: wrap; gap: 15px; margin: 15px 0;">
-          <div style="flex: 1; min-width: 120px; text-align: center;">
-            <div style="font-size: 1.5em; margin-bottom: 5px;">🗳️</div>
-            <strong>Vote on Tracks</strong><br>
-            <small style="color: #ccc;">Help decide what plays next</small>
-          </div>
-          <div style="flex: 1; min-width: 120px; text-align: center;">
-            <div style="font-size: 1.5em; margin-bottom: 5px;">💬</div>
-            <strong>Join the Chat</strong><br>
-            <small style="color: #ccc;">Talk with other listeners</small>
-          </div>
-          <div style="flex: 1; min-width: 120px; text-align: center;">
-            <div style="font-size: 1.5em; margin-bottom: 5px;">🎵</div>
-            <strong>Browse Playlists</strong><br>
-            <small style="color: #ccc;">See what's available</small>
-          </div>
-        </div>
-        <small style="color: #ccc; font-style: italic;">
-          No sign-up required! To host your own session, <a href="javascript:void(0)" onclick="location.reload()" style="color: #E91E63; text-decoration: underline;">click here</a> to go back.
-        </small>
-      </div>
-    `;
-    
-    // Insert after the h1
-    h1.parentNode.insertBefore(welcomeDiv, h1.nextSibling);
-  }
-}
-
-// Sign out as host function
-async function signOutAsHost() {
-  if (confirm('Are you sure you want to sign out as host? This will end the session for everyone.')) {
-    try {
-      const response = await fetch('/sign-out-host', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      });
-      
-      if (response.ok) {
-        alert('You have been signed out as host. Redirecting to role selection...');
-        window.location.href = '/select-role';
-      } else {
-        alert('Error signing out. Please try again.');
+    // Set new timeout for auto-search (500ms delay)
+    searchTimeout = setTimeout(() => {
+      if (query.length >= 2) { // Only search if 2+ characters
+        searchMusic(query);
       }
-    } catch (error) {
-      console.error('Error signing out:', error);
-      alert('Error signing out. Please try again.');
+    }, 500);
+  });
+  
+  // Also keep Enter key functionality
+  searchInput.addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') {
+      if (searchTimeout) {
+        clearTimeout(searchTimeout);
+      }
+      const query = this.value.trim();
+      if (query) {
+        searchMusic(query);
+      }
     }
+  });
+}
+
+async function searchMusic(query = null) {
+  const searchInput = document.getElementById('search-input');
+  const searchQuery = query || searchInput.value.trim();
+  
+  if (!searchQuery) {
+    document.getElementById('search-results').style.display = 'none';
+    return;
+  }
+  
+  // Show loading state
+  const searchBtn = document.getElementById('search-btn');
+  const originalText = searchBtn.textContent;
+  searchBtn.textContent = 'Searching...';
+  searchBtn.disabled = true;
+  
+  try {
+    console.log('Searching for:', searchQuery);
+    const response = await fetch(`/search/tracks?q=${encodeURIComponent(searchQuery)}&limit=20`);
+    const data = await response.json();
+    
+    if (data.error) {
+      console.error('Search error:', data.error);
+      showNotification(`❌ Search failed: ${data.error}`, 'error');
+      document.getElementById('search-results').style.display = 'none';
+      return;
+    }
+    
+    searchResults = data.tracks || [];
+    displaySearchResults(searchResults);
+    
+  } catch (error) {
+    console.error('Search request failed:', error);
+    showNotification('❌ Search failed. Please try again.', 'error');
+    document.getElementById('search-results').style.display = 'none';
+  } finally {
+    // Restore button state
+    searchBtn.textContent = originalText;
+    searchBtn.disabled = false;
   }
 }
 
-// Fetch user profile function
-async function fetchUserProfile() {
+function displaySearchResults(tracks) {
+  const resultsDiv = document.getElementById('search-results');
+  const resultsList = document.getElementById('search-results-list');
+  
+  if (!tracks || tracks.length === 0) {
+    resultsDiv.style.display = 'none';
+    alert('No tracks found. Try a different search term.');
+    return;
+  }
+  
+  resultsList.innerHTML = '';
+  
+  tracks.forEach(track => {
+    const li = document.createElement('li');
+    li.className = 'search-result-item';
+    
+    li.innerHTML = `
+      <div class="track-info">
+        <div class="track-name">${track.name}</div>
+        <div class="track-details">
+          ${track.artist_names} • ${track.album}
+          ${track.duration_text ? ' • ' + track.duration_text : ''}
+        </div>
+      </div>
+      <button onclick="addTrackToQueue('${track.uri}', '${track.name.replace(/'/g, "\\'")}', '${track.artist_names.replace(/'/g, "\\'")}')">
+        Add to Queue
+      </button>
+    `;
+    
+    resultsList.appendChild(li);
+  });
+  
+  resultsDiv.style.display = 'block';
+}
+
+async function addTrackToQueue(trackUri, trackName, artistNames) {
   try {
-    console.log('Fetching user profile to update display name...');
-    const response = await fetch('/fetch-user-profile', {
+    console.log('Adding to queue:', trackName, 'by', artistNames);
+    
+    // Show loading state
+    const button = event.target;
+    const originalText = button.textContent;
+    button.textContent = 'Adding...';
+    button.disabled = true;
+    
+    const response = await fetch('/search/add-to-queue', {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json'
-      }
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        track_uri: trackUri,
+        track_name: `${trackName} - ${artistNames}`
+      })
     });
-
+    
+    const data = await response.json();
+    
     if (response.ok) {
-      const data = await response.json();
-      console.log('User profile fetched:', data);
+      console.log('Track added successfully:', data.message);
+      showNotification(`✅ ${data.message}`, 'success');
       
-      // Update global variables
-      window.userId = data.user_id;
-      window.displayName = data.display_name;
+      // Increment queue count immediately for UI feedback
+      queueCount++;
+      updateQueueDisplay();
       
-      // Update the role indicator with the real name
-      updateUserDisplayName(data.display_name);
+      // Refresh queue display after a short delay
+      setTimeout(() => {
+        if (typeof loadQueue === 'function') {
+          loadQueue();
+        } else {
+          // Fallback: manually refresh queue
+          refreshQueueDisplay();
+        }
+      }, 500);
       
-      // Only reload playlists for hosts (listeners get host's playlists automatically)
-      if (window.userRole === 'host') {
-        console.log('Reloading playlists with updated user profile...');
-        loadPlaylists();
-      }
+      // Mark button as added
+      button.textContent = '✅ Added';
+      button.style.backgroundColor = '#27ae60';
+      setTimeout(() => {
+        button.textContent = originalText;
+        button.style.backgroundColor = '#1db954';
+        button.disabled = false;
+      }, 2000);
       
     } else {
-      const error = await response.json();
-      console.warn('Could not fetch user profile:', error.error);
+      console.error('Failed to add track:', data.error);
+      showNotification(`❌ ${data.error}`, 'error');
+      
+      // Restore button
+      button.textContent = originalText;
+      button.disabled = false;
     }
+    
   } catch (error) {
-    console.error('Error fetching user profile:', error);
-  }
-}
-
-// Update user display name in the UI
-function updateUserDisplayName(displayName) {
-  // Find and update the welcome message in the role indicator
-  const userContainer = document.querySelector('.role-indicator').nextElementSibling;
-  if (userContainer) {
-    const nameSpan = userContainer.querySelector('span');
-    if (nameSpan && nameSpan.textContent.startsWith('Welcome,')) {
-      nameSpan.textContent = `Welcome, ${displayName}!`;
-      console.log('Updated display name to:', displayName);
+    console.error('Error adding track to queue:', error);
+    showNotification('❌ Failed to add track to queue', 'error');
+    
+    // Restore button on error
+    if (event && event.target) {
+      event.target.textContent = 'Add to Queue';
+      event.target.disabled = false;
     }
   }
 }
 
-// Additional socket event handlers and missing functions
-socket.on("queue_add_success", data => {
-  console.log("Track successfully added to queue:", data);
-  // Show success message briefly
-  const successMsg = document.createElement("div");
-  successMsg.style.cssText = `
-    position: fixed; top: 20px; right: 20px; background: #1db954; 
-    color: white; padding: 10px 20px; border-radius: 5px; z-index: 9999;
-    font-weight: bold; box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+// Function to manually refresh queue display
+async function refreshQueueDisplay() {
+  try {
+    const response = await fetch('/queue/');
+    const data = await response.json();
+    
+    queueCount = data.count || 0;
+    updateQueueDisplay();
+    
+    // Update queue list if it exists
+    const queueList = document.getElementById('queue-list');
+    if (queueList && data.queue) {
+      queueList.innerHTML = '';
+      data.queue.forEach(item => {
+        const li = document.createElement('li');
+        li.textContent = item.track_name;
+        queueList.appendChild(li);
+      });
+    }
+    
+    console.log('Queue refreshed, count:', queueCount);
+  } catch (error) {
+    console.error('Error refreshing queue:', error);
+  }
+}
+
+function showNotification(message, type = 'info') {
+  // Create notification element
+  const notification = document.createElement('div');
+  notification.style.cssText = `
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    padding: 15px 20px;
+    border-radius: 8px;
+    color: white;
+    font-weight: bold;
+    z-index: 1000;
+    transition: all 0.3s ease;
+    max-width: 300px;
+    word-wrap: break-word;
   `;
-  successMsg.textContent = data.message || "Track added to queue!";
-  document.body.appendChild(successMsg);
+  
+  // Set color based on type
+  if (type === 'success') {
+    notification.style.backgroundColor = '#27ae60';
+  } else if (type === 'error') {
+    notification.style.backgroundColor = '#e74c3c';
+  } else {
+    notification.style.backgroundColor = '#3498db';
+  }
+  
+  notification.textContent = message;
+  document.body.appendChild(notification);
   
   // Remove after 3 seconds
   setTimeout(() => {
-    if (successMsg.parentNode) {
-      successMsg.parentNode.removeChild(successMsg);
-    }
+    notification.style.opacity = '0';
+    notification.style.transform = 'translateX(100%)';
+    setTimeout(() => {
+      document.body.removeChild(notification);
+    }, 300);
   }, 3000);
-});
+}
 
-socket.on("votes_cleared", () => {
-  // Reset all vote displays to 0
-  voteData = {};
-  document.querySelectorAll('.vote-count').forEach(element => {
-    element.textContent = '0';
-  });
-});
-
-socket.on("chat_cleared", () => {
-  document.getElementById("chat-messages").innerHTML = '';
-});
-
-socket.on("session_restarted", () => {
-  // Reset player state
-  currentTrack = null;
-  isPlaying = false;
-  currentTrackUri = null;
-  currentPosition = 0;
-  duration = 0;
-  
-  // Update UI
-  updateNowPlaying(null);
-  updatePlayPauseButton(false);
-  updateProgress(0, 0);
-  updateConnectionStatus('🔴 Session Restarted');
-  
-  // Stop progress tracking
-  stopProgressTracking();
-  
-  // Show notification
-  alert('Session has been restarted. All data cleared. Please refresh if needed.');
-});
-
-socket.on("track_removed", (data) => {
-  // Remove the track from the queue UI
-  const trackElement = document.querySelector(`li[data-track-uri="${data.track_uri}"]`);
-  if (trackElement) {
-    trackElement.remove();
-    queueCount--;
-    updateQueueDisplay();
-    console.log(`Removed from queue: ${data.track_name}`);
-  }
-});
-
-socket.on("vote_confirmed", data => {
-  console.log(`Vote confirmed: ${data.vote_type} on ${data.track_uri}`);
-  // Vote was processed successfully - no visual feedback needed
-});
-
-// Window onload event handler
-window.onload = function() {
-  console.log('Page loaded, user role:', window.userRole);
-  
-  // Ensure proper UI state on page load
-  const clearQueueBtn = document.getElementById('clear-queue-btn');
-  if (clearQueueBtn) {
-    if (window.userRole === 'host') {
-      clearQueueBtn.style.display = 'inline-block';
-      console.log('Page load: Clear queue button shown for host');
-    } else {
-      clearQueueBtn.style.display = 'none';
-      console.log('Page load: Clear queue button hidden for role:', window.userRole);
-    }
-  }
-  
-  // Immediately hide login div if user is authenticated
-  if (window.userRole && (window.userRole === 'host' || window.userRole === 'listener')) {
-    const loginDiv = document.getElementById('login');
-    if (loginDiv) {
-      console.log('Immediately hiding login div for authenticated user:', window.userRole);
-      loginDiv.style.display = 'none';
-      loginDiv.style.visibility = 'hidden';
-      loginDiv.style.height = '0px';
-      loginDiv.style.overflow = 'hidden';
-    }
-    
-    const roleSelection = document.querySelector('.role-selection');
-    if (roleSelection) {
-      roleSelection.style.display = 'none';
-    }
-  }
-  
-  // Load playlists for hosts and listeners (listeners see host's playlists)
-  if (window.userRole === 'host' || window.userRole === 'listener') {
-    loadPlaylists();
-  }
-  loadInitialQueue();
+// Add search on Enter key press and auto-search setup
+document.addEventListener('DOMContentLoaded', function() {
+  // Setup auto-search functionality
+  setupAutoSearch();
   
   // Initialize role-based UI
-  console.log('Page loaded, initializing role-based UI...');
   initializeRoleBasedUI();
   
-  // Additional explicit UI fixes for listeners
-  if (window.userRole === 'listener') {
-    console.log('Applying additional listener UI fixes...');
-    setTimeout(() => {
-      const clearQueueBtn = document.getElementById('clear-queue-btn');
-      if (clearQueueBtn) {
-        clearQueueBtn.style.display = 'none';
-        console.log('Clear queue button hidden for listener');
-      }
-    }, 100);
+  // Initialize queue display
+  if (typeof loadQueue === 'function') {
+    loadQueue();
+  } else {
+    refreshQueueDisplay();
   }
-  
-  // Fetch user profile if logged in (not guest or listener without Spotify)
-  if (window.userRole === 'host') {
-    fetchUserProfile();
-  }
-  
-  // Set up back button handler
-  const backBtn = document.getElementById('back-btn');
-  if (backBtn) {
-    backBtn.onclick = function() {
-      document.getElementById('tracks').style.display = 'none';
-      document.getElementById('playlists').style.display = 'block';
-      // clear track list
-      document.getElementById('track-list').innerHTML = '';
-    };
-  }
-};
+});
 
-// Debug function to check player state
-async function debugPlayerState() {
-  console.log('=== SPOTIFY PLAYER DEBUG ===');
-  console.log('Access Token:', accessToken ? 'Present' : 'Missing');
-  console.log('Device ID:', deviceId || 'Missing');
-  console.log('Player Object:', player ? 'Present' : 'Missing');
+function initializeRoleBasedUI() {
+  const userRole = window.userRole;
+  console.log('Initializing UI for role:', userRole);
   
-  if (player) {
-    try {
-      const state = await player.getCurrentState();
-      console.log('Player State:', state);
-    } catch (error) {
-      console.log('Error getting player state:', error);
-    }
-  }
+  // Elements to control
+  const playlistsDiv = document.getElementById('playlists');
+  const tracksDiv = document.getElementById('tracks');
+  const searchSection = document.getElementById('search-section');
   
-  // Check available devices
-  try {
-    const response = await fetch('/playback/devices');
-    const devices = await response.json();
-    console.log('Available Devices:', devices);
-  } catch (error) {
-    console.log('Error getting devices:', error);
-  }
-  
-  console.log('=== END DEBUG ===');
-}
-
-// Add debug button to console (for development)
-window.debugPlayer = debugPlayerState;
-
-// Placeholder function for legacy compatibility
-function playTrack() {
-  // This function was in the original but is no longer used
-  console.log('playTrack() called - this is now handled by playTrackFromQueue()');
-}
-
-// Missing loadQueue function for guests
-async function loadQueue() {
-  try {
-    const response = await fetch('/queue');
-    const data = await response.json();
-    queueCount = data.count || 0;
-    updateQueueDisplay();
-    console.log('Initial queue loaded for guest, count:', queueCount);
-  } catch (err) {
-    console.error('Error loading queue for guest:', err);
+  if (userRole === 'host') {
+    // Host sees everything: search + playlists
+    if (searchSection) searchSection.style.display = 'block';
+    if (playlistsDiv) playlistsDiv.style.display = 'block';
+    if (tracksDiv) tracksDiv.style.display = 'none';
+  } else {
+    // Listeners and guests see only search
+    if (searchSection) searchSection.style.display = 'block';
+    if (playlistsDiv) playlistsDiv.style.display = 'none';
+    if (tracksDiv) tracksDiv.style.display = 'none';
   }
 }

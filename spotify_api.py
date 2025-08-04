@@ -549,3 +549,111 @@ def get_track_info(access_token, track_id):
             continue
     
     return None
+
+
+def search_tracks(query, access_token=None, limit=20):
+    """
+    Search for tracks using Spotify Web API without requiring user authentication.
+    Uses client credentials flow or provided access token.
+    """
+    try:
+        if access_token:
+            # Use provided access token
+            headers = {
+                'Authorization': f'Bearer {access_token}',
+                'Content-Type': 'application/json'
+            }
+        else:
+            # Get client credentials token (doesn't require user login)
+            client_id = os.getenv("SPOTIFY_CLIENT_ID")
+            client_secret = os.getenv("SPOTIFY_CLIENT_SECRET")
+            
+            if not client_id or not client_secret:
+                print("Missing Spotify client credentials")
+                return {"tracks": [], "error": "Spotify credentials not configured"}
+            
+            # Get client credentials token
+            auth_url = "https://accounts.spotify.com/api/token"
+            auth_data = {
+                "grant_type": "client_credentials"
+            }
+            auth_headers = {
+                "Content-Type": "application/x-www-form-urlencoded"
+            }
+            
+            auth_response = requests.post(
+                auth_url, 
+                data=auth_data, 
+                headers=auth_headers,
+                auth=(client_id, client_secret),
+                timeout=10
+            )
+            
+            if auth_response.status_code != 200:
+                print(f"Failed to get client credentials token: {auth_response.status_code}")
+                return {"tracks": [], "error": "Failed to authenticate with Spotify"}
+            
+            token_data = auth_response.json()
+            access_token = token_data.get("access_token")
+            
+            headers = {
+                'Authorization': f'Bearer {access_token}',
+                'Content-Type': 'application/json'
+            }
+        
+        # Search for tracks
+        search_url = "https://api.spotify.com/v1/search"
+        params = {
+            'q': query,
+            'type': 'track',
+            'limit': limit,
+            'market': 'US'  # You can make this configurable
+        }
+        
+        response = requests.get(search_url, headers=headers, params=params, timeout=10)
+        
+        if response.status_code != 200:
+            print(f"Search request failed: {response.status_code}")
+            return {"tracks": [], "error": "Search request failed"}
+        
+        data = response.json()
+        tracks = data.get('tracks', {}).get('items', [])
+        
+        # Format tracks for frontend
+        formatted_tracks = []
+        for track in tracks:
+            formatted_track = {
+                'id': track['id'],
+                'uri': track['uri'],
+                'name': track['name'],
+                'artists': [artist['name'] for artist in track['artists']],
+                'artist_names': ', '.join([artist['name'] for artist in track['artists']]),
+                'album': track['album']['name'],
+                'duration_ms': track['duration_ms'],
+                'duration_text': format_duration(track['duration_ms']),
+                'preview_url': track.get('preview_url'),
+                'external_url': track['external_urls'].get('spotify'),
+                'image_url': track['album']['images'][0]['url'] if track['album']['images'] else None
+            }
+            formatted_tracks.append(formatted_track)
+        
+        return {
+            "tracks": formatted_tracks,
+            "total": data.get('tracks', {}).get('total', 0),
+            "query": query
+        }
+        
+    except Exception as e:
+        print(f"Error searching tracks: {e}")
+        return {"tracks": [], "error": str(e)}
+
+
+def format_duration(duration_ms):
+    """Format duration from milliseconds to MM:SS format"""
+    if not duration_ms:
+        return "0:00"
+    
+    total_seconds = duration_ms // 1000
+    minutes = total_seconds // 60
+    seconds = total_seconds % 60
+    return f"{minutes}:{seconds:02d}"

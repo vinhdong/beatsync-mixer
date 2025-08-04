@@ -1,14 +1,29 @@
 <!-- Side-by-side content grid -->
 <div class="content-grid">
-  <!-- Left side: Playlists and Tracks -->
+  <!-- Left side: Music Search and Playlists -->
   <div class="section">
-    <div id="playlists" style="display:block;">
+    <!-- Music Search Section -->
+    <div id="search-section">
+      <h2>🎵 Search Music</h2>
+      <div class="search-container">
+        <input type="text" id="search-input" placeholder="Search for songs, artists, or albums...">
+        <button id="search-btn" onclick="searchMusic()">Search</button>
+      </div>
+      
+      <div id="search-results">
+        <h3>Search Results</h3>
+        <ul id="search-results-list"></ul>
+      </div>
+    </div>
+
+    <!-- Playlists Section (Host only) -->
+    <div id="playlists">
       <h2>Your Playlists</h2>
       <ul id="playlist-list"></ul>
     </div>
 
-    <div id="tracks" style="display:none;">
-      <button id="back-btn" style="margin-bottom:10px;">← Back to Playlists</button>
+    <div id="tracks">
+      <button id="back-btn">← Back to Playlists</button>
       <h2>Playlist Tracks</h2>
       <ul id="track-list"></ul>
     </div>
@@ -17,12 +32,12 @@
   <!-- Right side: Queue -->
   <div class="section">
     <div id="queue-section">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-        <h2>Current Queue <small style="font-size: 0.6em; color: #666; font-weight: normal;">(ordered by votes)</small></h2>
-        <button id="clear-queue-btn" onclick="clearQueue()" style="background-color: #e74c3c; display: none;">Clear Queue</button>
+      <div class="queue-header">
+        <h2>Current Queue <small>(ordered by votes)</small></h2>
+        <button id="clear-queue-btn" onclick="clearQueue()">Clear Queue</button>
       </div>
       <ul id="queue"></ul>
-      <div id="queue-empty" style="display: none; text-align: center; color: #666; padding: 20px;">
+      <div id="queue-empty">
         No tracks in queue. Add some music! 🎵
       </div>
     </div>

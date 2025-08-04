@@ -217,7 +217,7 @@ def select_role():
                 Control the music, manage the queue, and lead the listening session.
                 <br><strong>Requires:</strong> Spotify Premium account
             </div>
-            <a href="/login?role=host" class="role-btn" id="host-btn">🎵 Host Session</a>
+            <a href="/user_auth/login" class="role-btn" id="host-btn">🎵 Host Session</a>
         </div>
         
         <div class="role-card">
