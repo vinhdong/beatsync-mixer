@@ -577,56 +577,17 @@ def get_track_info(access_token, track_id):
 
 def search_tracks(query, access_token=None, limit=20):
     """
-    Search for tracks using Spotify Web API without requiring user authentication.
+    Search for tracks using Spotify Web API with improved DNS handling.
     Uses client credentials flow or provided access token.
     """
     try:
-        if access_token:
-            # Use provided access token
-            headers = {
-                'Authorization': f'Bearer {access_token}',
-                'Content-Type': 'application/json'
-            }
-        else:
-            # Get client credentials token (doesn't require user login)
-            client_id = os.getenv("SPOTIFY_CLIENT_ID")
-            client_secret = os.getenv("SPOTIFY_CLIENT_SECRET")
-            
-            if not client_id or not client_secret:
-                print("Missing Spotify client credentials")
-                return {"tracks": [], "error": "Spotify credentials not configured"}
-            
-            # Get client credentials token
-            auth_url = "https://accounts.spotify.com/api/token"
-            auth_data = {
-                "grant_type": "client_credentials"
-            }
-            auth_headers = {
-                "Content-Type": "application/x-www-form-urlencoded"
-            }
-            
-            auth_response = requests.post(
-                auth_url, 
-                data=auth_data, 
-                headers=auth_headers,
-                auth=(client_id, client_secret),
-                timeout=10
-            )
-            
-            if auth_response.status_code != 200:
-                print(f"Failed to get client credentials token: {auth_response.status_code}")
+        # Get access token if not provided
+        if not access_token:
+            access_token = get_client_credentials_token()
+            if not access_token:
                 return {"tracks": [], "error": "Failed to authenticate with Spotify"}
-            
-            token_data = auth_response.json()
-            access_token = token_data.get("access_token")
-            
-            headers = {
-                'Authorization': f'Bearer {access_token}',
-                'Content-Type': 'application/json'
-            }
         
-        # Search for tracks
-        search_url = "https://api.spotify.com/v1/search"
+        # Use centralized API request function
         params = {
             'q': query,
             'type': 'track',
@@ -634,13 +595,11 @@ def search_tracks(query, access_token=None, limit=20):
             'market': 'US'  # You can make this configurable
         }
         
-        response = requests.get(search_url, headers=headers, params=params, timeout=10)
+        data = make_spotify_api_request("search", access_token, params=params, timeout_config=(4, 8))
         
-        if response.status_code != 200:
-            print(f"Search request failed: {response.status_code}")
+        if not data:
             return {"tracks": [], "error": "Search request failed"}
         
-        data = response.json()
         tracks = data.get('tracks', {}).get('items', [])
         
         # Format tracks for frontend
@@ -670,6 +629,79 @@ def search_tracks(query, access_token=None, limit=20):
     except Exception as e:
         print(f"Error searching tracks: {e}")
         return {"tracks": [], "error": str(e)}
+
+
+def get_client_credentials_token():
+    """Get a client credentials token for app-only access with DNS fallback"""
+    try:
+        client_id = os.getenv("SPOTIFY_CLIENT_ID")
+        client_secret = os.getenv("SPOTIFY_CLIENT_SECRET")
+        
+        if not client_id or not client_secret:
+            print("Missing Spotify client credentials")
+            return None
+        
+        # Try manual IP approach first for production
+        if not IS_DEVELOPMENT:
+            # Updated Spotify accounts server IPs
+            auth_ips = ["35.186.224.24", "104.154.127.126", "34.102.136.180"]
+            
+            auth_data = {
+                "grant_type": "client_credentials"
+            }
+            
+            for ip in auth_ips:
+                try:
+                    print(f"Trying client credentials with IP: {ip}")
+                    url = f"https://{ip}/api/token"
+                    headers = {
+                        'Host': 'accounts.spotify.com',
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    }
+                    
+                    response = requests.post(
+                        url,
+                        data=auth_data,
+                        headers=headers,
+                        auth=(client_id, client_secret),
+                        timeout=(3, 6),
+                        verify=False
+                    )
+                    
+                    if response.status_code == 200:
+                        token_data = response.json()
+                        print(f"✅ Got client credentials token via IP {ip}")
+                        return token_data.get("access_token")
+                        
+                except Exception as e:
+                    print(f"❌ Client credentials failed with IP {ip}: {e}")
+                    continue
+        
+        # Development or fallback: try regular DNS
+        print("🔄 Trying client credentials with regular DNS...")
+        auth_data = {
+            "grant_type": "client_credentials"
+        }
+        
+        response = requests.post(
+            "https://accounts.spotify.com/api/token",
+            data=auth_data,
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            auth=(client_id, client_secret),
+            timeout=(5, 10)
+        )
+        
+        if response.status_code == 200:
+            token_data = response.json()
+            print("✅ Got client credentials token via DNS")
+            return token_data.get("access_token")
+        else:
+            print(f"❌ Client credentials DNS failed: {response.status_code}")
+            return None
+            
+    except Exception as e:
+        print(f"❌ Client credentials error: {e}")
+        return None
 
 
 def format_duration(duration_ms):
