@@ -5,6 +5,26 @@
 let queueCount = 0;
 let voteData = {};
 
+// Helper function to extract artist from track name
+function extractArtistFromTrackName(trackName) {
+  if (!trackName) return 'Unknown Artist';
+  
+  // Try to extract artist from common formats:
+  // "Artist - Track Name"
+  // "Artist — Track Name" (em dash)
+  // "Artist: Track Name"
+  if (trackName.includes(' - ')) {
+    return trackName.split(' - ')[0].trim();
+  } else if (trackName.includes(' — ')) {
+    return trackName.split(' — ')[0].trim();
+  } else if (trackName.includes(': ')) {
+    return trackName.split(': ')[0].trim();
+  }
+  
+  // If no separator found, return Unknown Artist
+  return 'Unknown Artist';
+}
+
 async function loadQueue() {
   try {
     const response = await fetch('/queue');
@@ -69,6 +89,7 @@ async function refreshQueueDisplay() {
               <button class="vote-btn" onclick="voteTrack('${trackId}', 'down', this)">👎</button>
               <span class="vote-count" id="down-${safeTrackId}">${item.downvotes || 0}</span>
               ${window.userRole === 'host' ? `<button onclick="playTrackFromQueue('${trackId}')" style="background-color: #1db954; margin: 0 5px;">▶️ Play</button>` : ''}
+              ${window.userRole === 'host' ? `<button onclick="showAddToPlaylistModal('${trackId}', '${(item.track_name || 'Unknown Track').replace(/'/g, "\\'")}', '${extractArtistFromTrackName(item.track_name || '').replace(/'/g, "\\'")}', '${(item.track_album || '').replace(/'/g, "\\'")}', ${item.track_duration || 0})" style="background-color: #9b59b6; margin: 0 5px; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer;">📋 Add to Playlist</button>` : ''}
               <button class="recommendations-btn" onclick="loadRecs('${trackId}', '${safeTrackId}')">See Similar Tracks</button>
             </div>
             <div id="recs-${safeTrackId}" class="recommendations-list"></div>
@@ -186,3 +207,4 @@ window.refreshQueueDisplay = refreshQueueDisplay;
 window.voteTrack = voteTrack;
 window.clearQueue = clearQueue;
 window.queueTrack = queueTrack;
+window.extractArtistFromTrackName = extractArtistFromTrackName;

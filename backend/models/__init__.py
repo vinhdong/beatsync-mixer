@@ -11,3 +11,4 @@ from .user_models import User
 from .queue_models import QueueItem, Vote
 from .chat_models import ChatMessage
 from .playback_models import CurrentlyPlaying
+from .playlist_models import CustomPlaylist, PlaylistTrack

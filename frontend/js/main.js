@@ -11,6 +11,16 @@ document.addEventListener('DOMContentLoaded', function() {
     initializeUI();
   }
   
+  // Initialize playlist UI
+  if (typeof initializePlaylistUI === 'function') {
+    initializePlaylistUI();
+  }
+  
+  // Load custom playlists for hosts
+  if (window.userRole === 'host' && typeof loadCustomPlaylists === 'function') {
+    loadCustomPlaylists();
+  }
+  
   // Initialize Spotify player for hosts
   if (window.userRole === 'host' && typeof initializeSpotifyPlayer === 'function') {
     // Wait for Spotify SDK to load

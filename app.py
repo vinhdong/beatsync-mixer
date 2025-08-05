@@ -15,6 +15,7 @@ from backend.websockets.handlers import init_socketio
 # Import blueprints
 from backend.auth.spotify_auth import auth_bp
 from backend.routes.playlists import playlists_bp
+from backend.routes.custom_playlists import custom_playlists_bp
 from backend.routes.recommend import recommend_bp
 from backend.routes.queue import queue_bp
 from backend.routes.playback import playback_bp
@@ -44,6 +45,7 @@ def create_app():
     # Register blueprints
     app.register_blueprint(auth_bp)
     app.register_blueprint(playlists_bp, url_prefix="/playlists")
+    app.register_blueprint(custom_playlists_bp, url_prefix="/custom_playlists")
     app.register_blueprint(recommend_bp, url_prefix="/recommend")
     app.register_blueprint(queue_bp, url_prefix="/queue")
     app.register_blueprint(playback_bp, url_prefix="/playback")
