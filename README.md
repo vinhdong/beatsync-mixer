@@ -17,37 +17,53 @@ A collaborative music queueing web application that connects with Spotify to let
 - Spotify Web Playback SDK for synchronized audio streaming
 - Cross-device playback control and state management
 
-### � **Multi-User Experience**
+### 👥 **Multi-User Experience**
 - **Host Mode**: Full playlist control, queue management, playback control
 - **Listener Mode**: Track voting, queue contributions, synchronized listening
 - Real-time synchronization across all connected users
 - Session-based user management with role-based permissions
 
-### �️ **Democratic Voting System**
-- Thumbs up/down voting on queued tracks
-- Real-time vote count updates and queue reordering
-- Smart auto-play algorithm based on community preferences
-- Prevention of duplicate voting with session tracking
+### 🗳️ **Voting System**
+- Real-time thumbs up/down voting with smooth animations
+- Queue automatically reorders based on vote scores
+- Card-like sliding animations when songs change position
+- "UP NEXT" indicator for highest-voted track
+- Democratic queue management with fair voting
 
-### 🎯 **Intelligent Recommendations**
+### 🎯 **Music Recommendations**
 - Last.fm API integration for music discovery
 - Context-aware track suggestions based on current playlist
-- Fast recommendation loading with optimized API calls
-- Fallback recommendation systems for reliability
+- Smart recommendation algorithms for music exploration
 
-### � **Real-Time Communication**
+### 💬 **Real-Time Chat**
 - Live chat during listening sessions
 - Socket.IO powered instant messaging
 - User presence indicators and connection status
-- Message history and timestamps
 
-### � **Production-Ready Architecture**
-- Modular Flask application with blueprint organization
+### 🏗️ **Modern Architecture**
+- Clean modular backend with organized blueprints
+- Separated frontend components (CSS, JS modules, HTML partials)
+- Production-ready Flask application factory pattern
 - Two-tier caching (Redis + in-memory) for optimal performance
 - Robust error handling and graceful degradation
 - Heroku-optimized deployment with DNS fallback strategies
 
-## 🚀 Quick Start
+## ✨ Recent Updates
+
+### v2.0 - Enhanced UX & Modular Architecture (August 2025)
+- 🎨 **Smooth Animations**: Beautiful card-like sliding animations for queue reordering
+- �️ **Improved Voting**: Fixed vote button behavior with elegant green glow effects
+- 🏗️ **Modular Codebase**: Complete architectural refactor for maintainability
+- 📱 **Better UI**: Fixed "UP NEXT" label positioning and improved visual hierarchy
+- ⚡ **Performance**: Optimized real-time updates and reduced code complexity
+- 🧹 **Code Cleanup**: Removed legacy code and implemented modern patterns
+
+### Key Improvements
+- Vote buttons now have clean interactions (no unwanted scaling/popping)
+- Queue automatically reorders with smooth position-based animations  
+- Separated frontend into modular CSS/JS files for better organization
+- Restructured backend into logical blueprints and models
+- Enhanced error handling and duplicate vote prevention
 
 ### 🌐 Try it Live
 Visit the [live demo](https://beatsync-mixer-5715861af181.herokuapp.com/) to experience BeatSync Mixer immediately:
@@ -129,27 +145,66 @@ The application exposes its own REST API endpoints for integration:
 
 ## 🏗️ Architecture
 
-### Backend Structure
+### Modular Backend Structure
 ```
-app.py              # Main Flask application and factory
-├── auth.py         # Spotify OAuth and session management
-├── playlists.py    # Playlist fetching and caching
-├── queue_routes.py # Queue management and voting logic
-├── playback.py     # Spotify playback control
-├── recommend.py    # Last.fm recommendation engine
-├── sockets.py      # Real-time Socket.IO handlers
-├── cache.py        # Two-tier caching system
-├── db.py          # Database models and management
-└── config.py      # Environment and configuration
+backend/
+├── api/                # External API integrations
+│   ├── spotify.py      # Spotify Web API client
+│   └── lastfm.py       # Last.fm recommendations
+├── auth/               # Authentication systems
+│   ├── spotify_auth.py # Spotify OAuth flow
+│   └── user_auth.py    # Custom user authentication
+├── models/             # Database models
+│   ├── user_models.py  # User and session models
+│   ├── queue_models.py # Queue and voting models
+│   ├── playlist_models.py # Playlist management
+│   └── database_config.py # DB configuration
+├── routes/             # API route handlers
+│   ├── queue.py        # Queue management
+│   ├── playlists.py    # Playlist operations
+│   ├── playback.py     # Playback control
+│   ├── search.py       # Music search
+│   └── session.py      # Session management
+├── utils/              # Utilities and helpers
+│   ├── cache.py        # Two-tier caching system
+│   └── config.py       # Configuration management
+└── websockets/         # Real-time communication
+    └── handlers.py     # Socket.IO event handlers
+```
+
+### Modular Frontend Structure  
+```
+frontend/
+├── css/                # Separated stylesheets
+│   ├── styles.css      # Main styles
+│   ├── components.css  # Component styles
+│   ├── layout.css      # Layout and grid
+│   ├── queue.css       # Queue-specific styles
+│   └── animations.css  # Smooth animations
+├── js/                 # Modular JavaScript
+│   ├── auth.js         # Authentication logic
+│   ├── search.js       # Music search functionality
+│   ├── playlists.js    # Playlist management
+│   ├── queue.js        # Queue and voting logic
+│   ├── playback.js     # Playback controls
+│   ├── chat.js         # Real-time messaging
+│   └── socket.js       # Socket.IO client
+├── partials/           # Reusable HTML components
+│   ├── head.ejs        # HTML head section
+│   ├── header.ejs      # Navigation header
+│   ├── player.ejs      # Spotify player widget
+│   └── modals.ejs      # Modal dialogs
+└── index.html          # Main application page
 ```
 
 ### Key Technologies
 - **Backend**: Flask 2.3.3, Flask-SocketIO 5.3.6, SQLAlchemy 2.0+
-- **Frontend**: Vanilla JavaScript, Socket.IO client, Spotify Web Playback SDK
+- **Frontend**: Modular JavaScript ES6+, Socket.IO client, Spotify Web Playbook SDK
 - **Database**: SQLite (development) / PostgreSQL (production)
 - **Caching**: Redis with in-memory fallback
 - **APIs**: Spotify Web API, Last.fm API, BeatSync Internal API
 - **Deployment**: Heroku with eventlet workers
+- **Architecture**: Clean modular design with separation of concerns
 
 ## 🎮 How It Works
 
@@ -168,9 +223,11 @@ app.py              # Main Flask application and factory
 5. **Chat**: Communicate with other participants
 
 ### Smart Features
+- **Queue Animations**: Smooth card-like sliding when songs reorder by votes
 - **Auto-play Algorithm**: Automatically plays highest-voted tracks
 - **Real-time Synchronization**: All users see the same queue and playback state
 - **Intelligent Caching**: Fast playlist loading and API optimization
+- **Vote-based Ordering**: Queue dynamically reorders based on user votes
 - **Graceful Degradation**: Continues working even if external services fail
 
 ## 🚀 Deployment
