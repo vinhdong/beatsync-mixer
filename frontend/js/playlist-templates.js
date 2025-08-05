@@ -75,8 +75,8 @@ function getAddToPlaylistModalTemplate(trackName, trackArtist, trackAlbum, playl
       <h3 style="margin: 0 0 20px 0; color: #333;">Add Track to Playlist</h3>
       
       <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px; color: #333;">
-        <div style="font-weight: bold; margin-bottom: 5px; color: #333;">${trackName}</div>
-        <div style="color: #666; font-size: 0.9em;">${trackArtist}</div>
+        <div style="font-weight: bold; margin-bottom: 5px; color: #333;">${trackArtist}</div>
+        <div style="color: #666; font-size: 0.9em;">${trackName}</div>
         ${trackAlbum ? `<div style="color: #888; font-size: 0.8em;">${trackAlbum}</div>` : ''}
       </div>
       
@@ -265,16 +265,61 @@ function getPlaylistTracksModalTemplate(playlist, tracks) {
 
 function getPlaylistItemTemplate(playlist) {
   return `
-    <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px; background: #f5f5f5; border-radius: 6px; margin-bottom: 8px;">
-      <div>
-        <div style="font-weight: bold; margin-bottom: 4px;">${playlist.name}</div>
-        <div style="font-size: 0.9em; color: #666;">${playlist.track_count} tracks</div>
-        ${playlist.description ? `<div style="font-size: 0.8em; color: #888; margin-top: 2px;">${playlist.description}</div>` : ''}
+    <div class="playlist-item" style="
+      display: flex; 
+      justify-content: space-between; 
+      align-items: center; 
+      padding: 18px 24px; 
+      background: #f8f9fa; 
+      border-radius: 10px; 
+      margin-bottom: 15px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+      transition: all 0.3s ease;
+      width: 100%;
+      box-sizing: border-box;
+    " onmouseover="this.style.backgroundColor='#e9ecef'; this.style.transform='translateY(-2px)'; this.style.boxShadow='0 4px 12px rgba(0,0,0,0.15)'" onmouseout="this.style.backgroundColor='#f8f9fa'; this.style.transform='translateY(0)'; this.style.boxShadow='0 2px 8px rgba(0,0,0,0.08)'">
+      <div class="playlist-info">
+        <div class="playlist-name">${playlist.name}</div>
+        <div class="playlist-count">${playlist.track_count} track${playlist.track_count !== 1 ? 's' : ''}</div>
+        ${playlist.description ? `<div class="playlist-description">${playlist.description}</div>` : ''}
       </div>
-      <div style="display: flex; gap: 8px;">
-        <button onclick="viewPlaylistTracks(${playlist.id}, '${playlist.name.replace(/'/g, "\\'")}')" style="background-color: #3498db; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer;">👁️ View</button>
-        <button onclick="showEditPlaylistModal(${playlist.id}, '${playlist.name.replace(/'/g, "\\'")}', '${(playlist.description || '').replace(/'/g, "\\'")}', '${playlist.name.replace(/'/g, "\\'")}Backup')" style="background-color: #f39c12; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer;">✏️ Edit</button>
-        <button onclick="deletePlaylist(${playlist.id}, '${playlist.name.replace(/'/g, "\\'")}', event)" style="background-color: #e74c3c; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer;">🗑️ Delete</button>
+      <div class="playlist-actions">
+        <button onclick="viewPlaylistTracks(${playlist.id}, '${playlist.name.replace(/'/g, "\\'")}')" style="
+          background-color: #3498db; 
+          color: white; 
+          border: none; 
+          padding: 8px 14px; 
+          border-radius: 6px; 
+          cursor: pointer; 
+          font-size: 0.9em;
+          transition: background-color 0.3s ease;
+        " onmouseover="this.style.backgroundColor='#2980b9'" onmouseout="this.style.backgroundColor='#3498db'">
+          👁️ View
+        </button>
+        <button onclick="showEditPlaylistModal(${playlist.id}, '${playlist.name.replace(/'/g, "\\'")}', '${(playlist.description || '').replace(/'/g, "\\'")}', '${playlist.name.replace(/'/g, "\\'")}Backup')" style="
+          background-color: #f39c12; 
+          color: white; 
+          border: none; 
+          padding: 8px 14px; 
+          border-radius: 6px; 
+          cursor: pointer; 
+          font-size: 0.9em;
+          transition: background-color 0.3s ease;
+        " onmouseover="this.style.backgroundColor='#e67e22'" onmouseout="this.style.backgroundColor='#f39c12'">
+          ✏️ Edit
+        </button>
+        <button onclick="deletePlaylist(${playlist.id}, '${playlist.name.replace(/'/g, "\\'")}', event)" style="
+          background-color: #e74c3c; 
+          color: white; 
+          border: none; 
+          padding: 8px 14px; 
+          border-radius: 6px; 
+          cursor: pointer; 
+          font-size: 0.9em;
+          transition: background-color 0.3s ease;
+        " onmouseover="this.style.backgroundColor='#c0392b'" onmouseout="this.style.backgroundColor='#e74c3c'">
+          🗑️ Delete
+        </button>
       </div>
     </div>
   `;
@@ -286,25 +331,31 @@ function getTrackItemTemplate(track, playlistId) {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding: 12px;
+      padding: 15px 20px;
       background: #f8f9fa;
-      border-radius: 6px;
-      margin-bottom: 8px;
-    ">
-      <div>
-        <div style="font-weight: bold; margin-bottom: 4px;">${track.track_name}</div>
-        <div style="color: #666; font-size: 0.9em;">${track.track_artist}</div>
-        ${track.track_album ? `<div style="color: #888; font-size: 0.8em;">${track.track_album}</div>` : ''}
+      border-radius: 8px;
+      margin-bottom: 10px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+      transition: all 0.3s ease;
+    " onmouseover="this.style.backgroundColor='#e9ecef'; this.style.transform='translateY(-1px)'" onmouseout="this.style.backgroundColor='#f8f9fa'; this.style.transform='translateY(0)'">
+      <div style="flex: 1; margin-right: 15px;">
+        <div style="font-weight: bold; margin-bottom: 6px; font-size: 1.05em; color: #333;">${track.track_name}</div>
+        <div style="color: #666; font-size: 0.95em; margin-bottom: 3px;">${track.track_artist}</div>
+        ${track.track_album ? `<div style="color: #888; font-size: 0.85em; line-height: 1.3;">${track.track_album}</div>` : ''}
       </div>
       <button onclick="removeTrackFromPlaylist(${playlistId}, ${track.id}, '${track.track_name.replace(/'/g, "\\'")}', this)" style="
         background-color: #e74c3c;
         color: white;
         border: none;
-        padding: 6px 10px;
-        border-radius: 4px;
+        padding: 8px 12px;
+        border-radius: 6px;
         cursor: pointer;
-        font-size: 12px;
-      ">🗑️ Remove</button>
+        font-size: 0.9em;
+        flex-shrink: 0;
+        transition: background-color 0.3s ease;
+      " onmouseover="this.style.backgroundColor='#c0392b'" onmouseout="this.style.backgroundColor='#e74c3c'">
+        🗑️ Remove
+      </button>
     </div>
   `;
 }

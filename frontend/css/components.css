@@ -186,8 +186,107 @@ button:hover {
   gap: 8px;
 }
 
+/* Playlist Specific Styles */
+#playlists {
+  min-height: 300px;
+}
+
+#custom-playlist-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  width: 100%;
+}
+
+#custom-playlist-list li {
+  margin-bottom: 0; /* Remove default margin since template handles it */
+  width: 100%;
+}
+
+.playlist-item {
+  transition: all 0.3s ease;
+  width: 100% !important;
+  box-sizing: border-box;
+}
+
+/* Ensure playlist section uses full width */
+.playlists-section {
+  width: 100%;
+  max-width: none;
+}
+
+/* Better spacing for playlist buttons */
+.playlist-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 200px; /* Ensure consistent button area width */
+}
+
 .playlist-actions button {
-  padding: 6px 12px;
+  white-space: nowrap;
+  min-width: 70px;
+  text-align: center;
+}
+
+/* Improve playlist info section */
+.playlist-info {
+  flex: 1;
+  min-width: 0; /* Allow text to truncate if needed */
+  margin-right: 20px;
+}
+
+.playlist-info .playlist-name {
+  font-weight: bold;
+  font-size: 1.1em;
+  color: #333;
+  margin-bottom: 6px;
+  word-wrap: break-word;
+}
+
+.playlist-info .playlist-count {
+  font-size: 0.9em;
+  color: #666;
+  margin-bottom: 4px;
+}
+
+.playlist-info .playlist-description {
   font-size: 0.85em;
-  border-radius: 4px;
+  color: #888;
+  line-height: 1.4;
+  word-wrap: break-word;
+}
+
+/* Playlist header styling */
+#playlists h2 {
+  margin-bottom: 20px;
+  color: #333;
+  font-size: 1.5em;
+}
+
+#create-playlist-btn {
+  background-color: #1db954 !important;
+  color: white !important;
+  border: none;
+  padding: 10px 18px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.95em;
+  font-weight: 600;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 4px rgba(29, 185, 84, 0.3);
+}
+
+#create-playlist-btn:hover {
+  background-color: #1ed760 !important;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(29, 185, 84, 0.4);
+}
+
+/* Better spacing for the playlist header */
+#playlists > div:first-child {
+  margin-bottom: 20px;
+  padding-bottom: 15px;
+  border-bottom: 2px solid #f0f0f0;
 }

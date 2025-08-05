@@ -25,6 +25,28 @@ function extractArtistFromTrackName(trackName) {
   return 'Unknown Artist';
 }
 
+function extractSongTitleFromTrackName(trackName) {
+  if (!trackName) return 'Unknown Track';
+  
+  // Try to extract song title from common formats:
+  // "Artist - Track Name"
+  // "Artist — Track Name" (em dash)
+  // "Artist: Track Name"
+  if (trackName.includes(' - ')) {
+    const parts = trackName.split(' - ');
+    return parts.length > 1 ? parts.slice(1).join(' - ').trim() : trackName;
+  } else if (trackName.includes(' — ')) {
+    const parts = trackName.split(' — ');
+    return parts.length > 1 ? parts.slice(1).join(' — ').trim() : trackName;
+  } else if (trackName.includes(': ')) {
+    const parts = trackName.split(': ');
+    return parts.length > 1 ? parts.slice(1).join(': ').trim() : trackName;
+  }
+  
+  // If no separator found, return the whole track name
+  return trackName;
+}
+
 async function loadQueue() {
   try {
     const response = await fetch('/queue');
@@ -89,7 +111,7 @@ async function refreshQueueDisplay() {
               <button class="vote-btn" onclick="voteTrack('${trackId}', 'down', this)">👎</button>
               <span class="vote-count" id="down-${safeTrackId}">${item.downvotes || 0}</span>
               ${window.userRole === 'host' ? `<button onclick="playTrackFromQueue('${trackId}')" style="background-color: #1db954; margin: 0 5px;">▶️ Play</button>` : ''}
-              ${window.userRole === 'host' ? `<button onclick="showAddToPlaylistModal('${trackId}', '${(item.track_name || 'Unknown Track').replace(/'/g, "\\'")}', '${extractArtistFromTrackName(item.track_name || '').replace(/'/g, "\\'")}', '${(item.track_album || '').replace(/'/g, "\\'")}', ${item.track_duration || 0})" style="background-color: #9b59b6; margin: 0 5px; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer;">📋 Add to Playlist</button>` : ''}
+              ${window.userRole === 'host' ? `<button onclick="showAddToPlaylistModal('${trackId}', '${extractSongTitleFromTrackName(item.track_name || '').replace(/'/g, "\\'")}', '${extractArtistFromTrackName(item.track_name || '').replace(/'/g, "\\'")}', '${(item.track_album || '').replace(/'/g, "\\'")}', ${item.track_duration || 0})" style="background-color: #9b59b6; margin: 0 5px; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer;">📋 Add to Playlist</button>` : ''}
               <button class="recommendations-btn" onclick="loadRecs('${trackId}', '${safeTrackId}')">See Similar Tracks</button>
             </div>
             <div id="recs-${safeTrackId}" class="recommendations-list"></div>
@@ -208,3 +230,5 @@ window.voteTrack = voteTrack;
 window.clearQueue = clearQueue;
 window.queueTrack = queueTrack;
 window.extractArtistFromTrackName = extractArtistFromTrackName;
+window.extractSongTitleFromTrackName = extractSongTitleFromTrackName;
+window.extractSongTitleFromTrackName = extractSongTitleFromTrackName;
