@@ -21,6 +21,23 @@
 <!-- Spotify Web Player - Fixed at top -->
 <div id="spotify-player-container">
   <div id="spotify-embed-wrapper" style="display: none;">
+    <div style="display: flex; justify-content: space-between; align-items: center; padding: 5px; background: #191414;">
+      <span style="color: white; font-size: 0.9em;">🎵 Preview Playing (30s)</span>
+      <div style="display: flex; gap: 10px; align-items: center;">
+        <button id="next-track-btn" onclick="nextTrack()" style="
+          background-color: #1db954; 
+          color: white; 
+          border: none; 
+          padding: 5px 10px; 
+          border-radius: 4px; 
+          cursor: pointer; 
+          font-size: 0.8em;
+          display: none;
+        " title="Skip to next track">
+          ⏭️ Next
+        </button>
+      </div>
+    </div>
     <iframe id="spotify-player" 
             style="border-radius:12px" 
             src="" 
@@ -51,10 +68,10 @@
         font-weight: bold;
         transition: all 0.3s ease;
       " onmouseover="this.style.backgroundColor='#1ed760'" onmouseout="this.style.backgroundColor='#1db954'">
-        🔄 Switch Role
+        🚪 Logout
       </button>
-      <button id="host-restart-btn" onclick="restartSession()">
-        🔄 Restart Session
+      <button id="host-restart-btn">
+        🔄 Reset
       </button>
     </div>
   </div>

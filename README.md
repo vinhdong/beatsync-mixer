@@ -1,6 +1,21 @@
 # 🎵 BeatSync Mixer
 
-A collaborative music queueing web application that connects with Spotify to let users browse playlists, queue tracks, and vote on music in real-time. Features synchronized playback, democratic voting, and intelligent music recommendations.
+A collaborative music queueing ## ✨ Recent Updates
+
+### v2.1 - Listener Differentiation & UI Fixes (August 2025)
+- 👥 **Multi-Listener Support**: Multiple listeners now automatically numbered (Listener 1, Listener 2, etc.)
+- 🔧 **Track Parsing Fix**: Fixed song title/artist extraction for "Add to Playlist" functionality
+- 🎵 **Recommendation Tracks**: Fixed tracks added from recommendations to be fully functional
+- 🧹 **Code Cleanup**: Removed excessive debugging and streamlined codebase
+- ⚡ **WebSocket Optimization**: Improved real-time user identification and session management
+
+### v2.0 - Enhanced UX & Modular Architecture (August 2025)
+- 🎨 **Smooth Animations**: Beautiful card-like sliding animations for queue reordering
+- 🔘 **Improved Voting**: Fixed vote button behavior with elegant green glow effects
+- 🏗️ **Modular Codebase**: Complete architectural refactor for maintainability
+- 📱 **Better UI**: Fixed "UP NEXT" label positioning and improved visual hierarchy
+- ⚡ **Performance**: Optimized real-time updates and reduced code complexity
+- 🧹 **Code Cleanup**: Removed legacy code and implemented modern patternscation that connects with Spotify to let users browse playlists, queue tracks, and vote on music in real-time. Features synchronized playback, democratic voting, and intelligent music recommendations.
 
 [![Deploy Status](https://img.shields.io/badge/deployed-heroku-success)](https://beatsync-mixer-5715861af181.herokuapp.com/)
 [![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/)
@@ -20,8 +35,10 @@ A collaborative music queueing web application that connects with Spotify to let
 ### 👥 **Multi-User Experience**
 - **Host Mode**: Full playlist control, queue management, playback control
 - **Listener Mode**: Track voting, queue contributions, synchronized listening
+- **Smart User Identification**: Multiple listeners automatically numbered (Listener 1, Listener 2, etc.)
 - Real-time synchronization across all connected users
 - Session-based user management with role-based permissions
+- Automatic listener numbering with clean disconnect handling
 
 ### 🗳️ **Voting System**
 - Real-time thumbs up/down voting with smooth animations
@@ -59,6 +76,11 @@ A collaborative music queueing web application that connects with Spotify to let
 - 🧹 **Code Cleanup**: Removed legacy code and implemented modern patterns
 
 ### Key Improvements
+- **Automatic Listener Numbering**: Each new listener gets a unique number (Listener 1, 2, 3, etc.)
+- **Efficient Number Management**: Smart reuse of numbers when listeners disconnect
+- **Real-time UI Updates**: Display names update instantly via WebSocket events
+- **Track Parsing Fix**: Corrected song title/artist extraction for playlist operations
+- **Recommendation Tracks**: All tracks added from recommendations now fully functional
 - Vote buttons now have clean interactions (no unwanted scaling/popping)
 - Queue automatically reorders with smooth position-based animations  
 - Separated frontend into modular CSS/JS files for better organization

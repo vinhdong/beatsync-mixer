@@ -5,14 +5,11 @@
 let queueCount = 0;
 let voteData = {};
 
-// Helper function to extract artist from track name
-function extractArtistFromTrackName(trackName) {
-  if (!trackName) return 'Unknown Artist';
+// Helper function to extract song title from track name (format: "Song Title - Artist Names")
+function extractSongTitleFromTrackName(trackName) {
+  if (!trackName) return 'Unknown Track';
   
-  // Try to extract artist from common formats:
-  // "Artist - Track Name"
-  // "Artist — Track Name" (em dash)
-  // "Artist: Track Name"
+  // Extract song title from "Song Title - Artist Names" format
   if (trackName.includes(' - ')) {
     return trackName.split(' - ')[0].trim();
   } else if (trackName.includes(' — ')) {
@@ -21,30 +18,27 @@ function extractArtistFromTrackName(trackName) {
     return trackName.split(': ')[0].trim();
   }
   
-  // If no separator found, return Unknown Artist
-  return 'Unknown Artist';
-}
-
-function extractSongTitleFromTrackName(trackName) {
-  if (!trackName) return 'Unknown Track';
-  
-  // Try to extract song title from common formats:
-  // "Artist - Track Name"
-  // "Artist — Track Name" (em dash)
-  // "Artist: Track Name"
-  if (trackName.includes(' - ')) {
-    const parts = trackName.split(' - ');
-    return parts.length > 1 ? parts.slice(1).join(' - ').trim() : trackName;
-  } else if (trackName.includes(' — ')) {
-    const parts = trackName.split(' — ');
-    return parts.length > 1 ? parts.slice(1).join(' — ').trim() : trackName;
-  } else if (trackName.includes(': ')) {
-    const parts = trackName.split(': ');
-    return parts.length > 1 ? parts.slice(1).join(': ').trim() : trackName;
-  }
-  
   // If no separator found, return the whole track name
   return trackName;
+}
+
+function extractArtistFromTrackName(trackName) {
+  if (!trackName) return 'Unknown Artist';
+  
+  // Extract artist from "Song Title - Artist Names" format
+  if (trackName.includes(' - ')) {
+    const parts = trackName.split(' - ');
+    return parts.length > 1 ? parts.slice(1).join(' - ').trim() : 'Unknown Artist';
+  } else if (trackName.includes(' — ')) {
+    const parts = trackName.split(' — ');
+    return parts.length > 1 ? parts.slice(1).join(' — ').trim() : 'Unknown Artist';
+  } else if (trackName.includes(': ')) {
+    const parts = trackName.split(': ');
+    return parts.length > 1 ? parts.slice(1).join(': ').trim() : 'Unknown Artist';
+  }
+  
+  // If no separator found, return Unknown Artist
+  return 'Unknown Artist';
 }
 
 async function loadQueue() {
@@ -210,7 +204,7 @@ function queueTrack(trackUri, trackName) {
       alert(data.error);
     } else {
       console.log('Track queued:', data);
-      showNotification(`✅ Added "${trackName}" to queue`, 'success');
+      // Removed notification: showNotification(`✅ Added "${trackName}" to queue`, 'success');
       
       if (typeof loadQueue === 'function') {
         loadQueue();
@@ -358,6 +352,176 @@ function reorderQueueByVotes() {
   console.log('Queue reordered by votes with position-based animations');
 }
 
+// Auto-advance to next song in queue by clicking the play button
+function autoAdvanceToNextSong() {
+  if (window.userRole !== 'host') {
+    console.log('Auto-advance denied: User is not host');
+    return;
+  }
+
+  // Call the actual auto-advance function with retry logic
+  autoAdvanceWithRetry(0);
+}
+
+function autoAdvanceWithRetry(retryCount) {
+  const maxRetries = 3;
+  
+  try {
+    console.log(`=== AUTO-ADVANCE DEBUG (Attempt ${retryCount + 1}/${maxRetries + 1}) ===`);
+    
+    // First, refresh the queue to ensure we have the latest data
+    setTimeout(async () => {
+      try {
+        // Force refresh the queue display first
+        await refreshQueueDisplay();
+        
+        // Debug: Check what queue elements exist after refresh
+        const queueList = document.getElementById('queue');
+        console.log('Queue list element after refresh:', queueList);
+        
+        if (queueList) {
+          console.log('Queue list HTML length:', queueList.innerHTML.length);
+          console.log('Queue list children count:', queueList.children.length);
+          
+          // Log first few characters to see structure
+          if (queueList.innerHTML.length > 0) {
+            console.log('Queue list HTML preview:', queueList.innerHTML.substring(0, 500));
+          }
+        }
+        
+        // Try to find queue items with multiple selectors
+        const queueItems1 = document.querySelectorAll('#queue li[data-track-uri]');
+        const queueItems2 = document.querySelectorAll('#queue li.queue-item');
+        const queueItems3 = document.querySelectorAll('#queue li');
+        
+        console.log('Selector #queue li[data-track-uri] found:', queueItems1.length);
+        console.log('Selector #queue li.queue-item found:', queueItems2.length);
+        console.log('Selector #queue li found:', queueItems3.length);
+        
+        // Use the best selector that finds items
+        let queueItems = queueItems1;
+        if (queueItems1.length === 0 && queueItems2.length > 0) {
+          queueItems = queueItems2;
+          console.log('Using #queue li.queue-item selector instead');
+        } else if (queueItems1.length === 0 && queueItems2.length === 0 && queueItems3.length > 0) {
+          queueItems = queueItems3;
+          console.log('Using #queue li selector as fallback');
+        }
+        
+        console.log('Final queue items to use:', queueItems.length);
+        
+        if (queueItems.length === 0) {
+          console.log('No songs found in DOM after refresh');
+          
+          // Check if we actually have tracks in the backend
+          try {
+            const response = await fetch('/queue/');
+            const data = await response.json();
+            console.log('Backend queue count:', data.count);
+            console.log('Backend queue data preview:', data.queue ? data.queue.slice(0, 2) : 'No queue data');
+            
+            if (data.count > 0 && retryCount < maxRetries) {
+              console.log(`Backend has ${data.count} tracks but DOM is empty - retrying in 1 second...`);
+              setTimeout(() => autoAdvanceWithRetry(retryCount + 1), 1000);
+              return;
+            } else if (data.count > 0) {
+              console.log('Max retries reached, DOM still empty despite backend data');
+              showNotification('⚠️ Queue loading issue - please refresh page', 'error');
+              return;
+            }
+          } catch (fetchError) {
+            console.error('Error checking backend queue:', fetchError);
+          }
+          
+          console.log('Queue is actually empty');
+          showNotification('🎵 Queue is empty', 'info');
+          return;
+        }
+
+        // Find the first song in the queue
+        const firstSong = queueItems[0];
+        console.log('First song element:', firstSong);
+        
+        const trackUri = firstSong.getAttribute('data-track-uri');
+        const trackName = firstSong.querySelector('span')?.textContent || 'Unknown';
+        
+        console.log('First song in queue:', trackName, trackUri);
+        
+        if (!trackUri) {
+          console.log('No track URI found for first song');
+          showNotification('❌ No track URI found', 'error');
+          return;
+        }
+        
+        // Try to find play button with multiple approaches
+        let playButton = firstSong.querySelector('button[onclick*="playTrackFromQueue"]');
+        
+        if (!playButton) {
+          // Try to find any button with play text or icon
+          const allButtons = firstSong.querySelectorAll('button');
+          console.log('All buttons in first song:', allButtons.length);
+          
+          for (const btn of allButtons) {
+            const btnText = btn.textContent.trim();
+            const onclick = btn.getAttribute('onclick') || '';
+            console.log(`  Button: "${btnText}", onclick: "${onclick}"`);
+            
+            if (onclick.includes('playTrackFromQueue') || btnText.includes('▶️') || btnText.includes('Play')) {
+              playButton = btn;
+              console.log('Found play button by content search');
+              break;
+            }
+          }
+        }
+        
+        if (!playButton) {
+          console.log('No play button found, calling playTrackFromQueue directly');
+          
+          // Call playTrackFromQueue directly if available
+          if (typeof playTrackFromQueue === 'function') {
+            console.log('Calling playTrackFromQueue directly with trackUri:', trackUri);
+            playTrackFromQueue(trackUri);
+            // Removed notification: showNotification('🎵 Auto-playing next song', 'success');
+            return;
+          } else {
+            console.error('playTrackFromQueue function not available');
+            showNotification('❌ Unable to play track', 'error');
+            return;
+          }
+        }
+
+        console.log('Found play button, clicking it...');
+        
+        // Simulate clicking the play button
+        playButton.click();
+        
+        console.log('Auto-advance completed by clicking play button');
+        // Removed notification: showNotification('🎵 Auto-playing next song', 'success');
+        
+      } catch (innerError) {
+        console.error('Error in auto-advance inner logic:', innerError);
+        
+        if (retryCount < maxRetries) {
+          console.log(`Retrying auto-advance due to error (attempt ${retryCount + 1}/${maxRetries + 1})`);
+          setTimeout(() => autoAdvanceWithRetry(retryCount + 1), 1000);
+        } else {
+          showNotification('❌ Auto-advance failed after retries', 'error');
+        }
+      }
+    }, 100); // Small delay to ensure DOM is ready
+    
+  } catch (error) {
+    console.error('Error auto-advancing to next song:', error);
+    
+    if (retryCount < maxRetries) {
+      console.log(`Retrying auto-advance due to outer error (attempt ${retryCount + 1}/${maxRetries + 1})`);
+      setTimeout(() => autoAdvanceWithRetry(retryCount + 1), 1000);
+    } else {
+      showNotification('❌ Failed to auto-advance after retries', 'error');
+    }
+  }
+}
+
 // Export functions
 window.loadQueue = loadQueue;
 window.updateQueueDisplay = updateQueueDisplay;
@@ -370,3 +534,5 @@ window.queueTrack = queueTrack;
 window.extractArtistFromTrackName = extractArtistFromTrackName;
 window.extractSongTitleFromTrackName = extractSongTitleFromTrackName;
 window.reorderQueueByVotes = reorderQueueByVotes;
+window.autoAdvanceToNextSong = autoAdvanceToNextSong;
+window.autoAdvanceWithRetry = autoAdvanceWithRetry;

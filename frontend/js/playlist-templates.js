@@ -348,19 +348,32 @@ function getTrackItemTemplate(track, playlistId) {
         <div style="color: #666; font-size: 0.95em; margin-bottom: 3px;">${songTitle}</div>
         ${track.track_album ? `<div style="color: #888; font-size: 0.85em; line-height: 1.3;">${track.track_album}</div>` : ''}
       </div>
-      <button onclick="removeTrackFromPlaylist(${playlistId}, ${track.id}, '${track.track_name.replace(/'/g, "\\'")}', this)" style="
-        background-color: #e74c3c;
-        color: white;
-        border: none;
-        padding: 8px 12px;
-        border-radius: 6px;
-        cursor: pointer;
-        font-size: 0.9em;
-        flex-shrink: 0;
-        transition: background-color 0.3s ease;
-      " onmouseover="this.style.backgroundColor='#c0392b'" onmouseout="this.style.backgroundColor='#e74c3c'">
-        🗑️ Remove
-      </button>
+      <div style="display: flex; gap: 8px; flex-shrink: 0;">
+        <button onclick="addToQueue('${track.track_artist.replace(/'/g, "\\'")}', '${songTitle.replace(/'/g, "\\'")}', '${(track.track_album || '').replace(/'/g, "\\'")}', this)" style="
+          background-color: #1db954;
+          color: white;
+          border: none;
+          padding: 8px 12px;
+          border-radius: 6px;
+          cursor: pointer;
+          font-size: 0.9em;
+          transition: background-color 0.3s ease;
+        " onmouseover="this.style.backgroundColor='#1ed760'" onmouseout="this.style.backgroundColor='#1db954'">
+          ➕ Queue
+        </button>
+        <button onclick="removeTrackFromPlaylist(${playlistId}, ${track.id}, '${track.track_name.replace(/'/g, "\\'")}', this)" style="
+          background-color: #e74c3c;
+          color: white;
+          border: none;
+          padding: 8px 12px;
+          border-radius: 6px;
+          cursor: pointer;
+          font-size: 0.9em;
+          transition: background-color 0.3s ease;
+        " onmouseover="this.style.backgroundColor='#c0392b'" onmouseout="this.style.backgroundColor='#e74c3c'">
+          🗑️ Remove
+        </button>
+      </div>
     </div>
   `;
 }

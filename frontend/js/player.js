@@ -1,16 +1,16 @@
 /**
- * Spotify Player Module
+ * Spotify Player Module - Simplified
  */
 
 let player = null;
 let deviceId = null;
 let accessToken = null;
+let currentTrackStartTime = null;
 
 async function initializeSpotifyPlayer() {
-  console.log('=== SPOTIFY PLAYER INIT DEBUG ===');
+  console.log('=== SPOTIFY PLAYER INIT ===');
   console.log('User role:', window.userRole);
-  console.log('Spotify SDK loaded:', !!window.Spotify);
-  console.log('==================================');
+  console.log('========================');
 
   if (window.userRole !== 'host') {
     console.log('Not a host, skipping Spotify player initialization');
@@ -20,7 +20,7 @@ async function initializeSpotifyPlayer() {
   console.log('Initializing Spotify player for host');
   
   try {
-    const response = await fetch('/playback/token');
+    const response = await fetch('/playback/spotify-token');
     const data = await response.json();
     
     if (data.error) {
@@ -62,7 +62,10 @@ async function initializeWebPlaybackSDK() {
   
   player.addListener('player_state_changed', (state) => {
     if (!state) return;
+    
     console.log('Player state changed:', state);
+    
+    // Track end detection removed - no automatic playback
   });
   
   player.connect();
@@ -91,136 +94,137 @@ async function transferPlaybackToDevice(deviceId) {
 }
 
 async function togglePlayback() {
-  // For now, this will just trigger the Spotify embed when called from queue
   console.log('Toggle playback called');
 }
 
 async function nextTrack() {
   if (window.userRole === 'host') {
-    autoPlayNext();
-  }
-}
-
-async function autoPlayNext() {
-  if (window.userRole !== 'host') {
-    console.log('Auto-play denied: User is not host');
-    return;
-  }
-  
-  try {
-    const response = await fetch('/queue/auto-play', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        device_id: deviceId
-      })
-    });
+    console.log('Manual next track');
     
-    const data = await response.json();
-    
-    if (response.ok) {
-      console.log('Auto-play successful:', data.message);
-      // Auto-play the track via Spotify embed
-      if (data.track && data.track.track_uri) {
-        playTrackFromQueue(data.track.track_uri);
-      }
-      showNotification(`🎵 Now playing: ${data.track.track_name}`, 'success');
+    // Use the queue-based auto-advance
+    if (typeof autoAdvanceToNextSong === 'function') {
+      autoAdvanceToNextSong();
     } else {
-      console.error('Auto-play failed:', data.error);
-      if (data.error !== 'Queue is empty') {
-        showNotification(`❌ ${data.error}`, 'error');
-      }
+      console.error('autoAdvanceToNextSong function not found');
     }
-  } catch (error) {
-    console.error('Error in auto-play:', error);
-    showNotification('❌ Failed to play next track', 'error');
+  } else {
+    showNotification('❌ Only hosts can skip tracks', 'error');
   }
 }
 
 async function playTrackFromQueue(trackUri) {
-  console.log('=== PLAY TRACK DEBUG ===');
-  console.log('User role:', window.userRole);
+  console.log('=== PLAY TRACK ===');
   console.log('Track URI:', trackUri);
-  console.log('========================');
+  console.log('==================');
 
   if (window.userRole !== 'host') {
     alert('Only hosts can control playback');
     return;
   }
 
-  // Extract Spotify track ID from URI (format: spotify:track:TRACK_ID)
-  const trackId = trackUri.split(':')[2];
+  // Extract Spotify track ID from URI
+  const uriParts = trackUri.split(':');
+  const trackId = uriParts[2];
+  
   if (!trackId) {
+    console.error('Invalid track ID extracted from URI:', trackUri);
     alert('Invalid track format');
+    return;
+  }
+  
+  // Validate that this looks like a Spotify URI
+  if (uriParts[0] !== 'spotify' || uriParts[1] !== 'track') {
+    console.error('URI does not look like a Spotify track URI:', trackUri);
+    alert('Invalid Spotify track URI');
     return;
   }
 
   try {
-    // Update the Spotify iframe to play this track
+    // Simple approach: Just load the Spotify embed
     const spotifyPlayer = document.getElementById('spotify-player');
     const spotifyWrapper = document.getElementById('spotify-embed-wrapper');
     
     if (spotifyPlayer && spotifyWrapper) {
-      // Show the Spotify embed
-      spotifyWrapper.style.display = 'block';
+      // Set up UI
+      setupPlayerUI();
       
-      // Adjust body padding to prevent overlap
-      document.body.style.paddingTop = '185px';
-      
-      // Set the iframe src to play the specific track with autoplay
-      const embedUrl = `https://open.spotify.com/embed/track/${trackId}?utm_source=generator&autoplay=1&theme=0&show_cover_art=true`;
+      // Load the track in Spotify embed
+      const embedUrl = `https://open.spotify.com/embed/track/${trackId}?utm_source=generator&theme=0&show_cover_art=true`;
       spotifyPlayer.src = embedUrl;
       
-      console.log('Updated Spotify embed to play:', trackUri);
+      console.log('Loaded track in Spotify embed:', trackUri);
+      // Removed notification: showNotification('🎵 Track loaded - click play to start', 'info');
       
-      // Update our app's UI to show what's playing
-      const trackElement = document.querySelector(`li[data-track-uri="${trackUri}"]`);
-      let trackName = 'Unknown Track';
+      // Record when this track started
+      currentTrackStartTime = Date.now();
       
-      if (trackElement) {
-        const trackNameSpan = trackElement.querySelector('span:first-child');
-        if (trackNameSpan) {
-          trackName = trackNameSpan.textContent.trim();
-        }
-      }
-      
-      // Broadcast to other users what's playing
-      if (typeof socket !== 'undefined') {
-        socket.emit('playback_started', {
-          track_uri: trackUri,
-          track_name: trackName,
-          is_playing: true
-        });
-      }
-      
-      console.log('Successfully started playback via embed');
-      
-    } else {
-      console.error('Spotify embed elements not found');
-      alert('Spotify player not found');
+      // Remove track from queue after short delay
+      removeTrackFromQueueAfterDelay(trackUri);
     }
     
   } catch (error) {
-    console.error('Error playing track:', error);
-    alert('Failed to play track. Please try again.');
+    console.error('Error in playTrackFromQueue:', error);
+    alert('Failed to load track: ' + error.message);
   }
 }
 
-// Remove track from queue after it's played
+function setupPlayerUI() {
+  const spotifyWrapper = document.getElementById('spotify-embed-wrapper');
+  if (spotifyWrapper) {
+    spotifyWrapper.style.display = 'block';
+  }
+  
+  // Show next track button for hosts
+  const nextBtn = document.getElementById('next-track-btn');
+  if (nextBtn && window.userRole === 'host') {
+    nextBtn.style.display = 'inline-block';
+  }
+  
+  // Adjust body padding
+  document.body.style.paddingTop = '210px';
+}
+
+function removeTrackFromQueueAfterDelay(trackUri) {
+  setTimeout(async () => {
+    try {
+      const response = await fetch(`/queue/remove/${encodeURIComponent(trackUri)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      if (response.ok) {
+        console.log('Track removed from queue after playback start');
+        if (typeof refreshQueueDisplay === 'function') {
+          refreshQueueDisplay();
+        }
+      }
+    } catch (error) {
+      console.error('Error removing track from queue:', error);
+    }
+  }, 1000);
+}
+
 async function removeTrackFromQueue(trackUri) {
+  console.log('Removing track from queue:', trackUri);
+  
+  if (window.userRole !== 'host') {
+    alert('Only hosts can remove tracks');
+    return;
+  }
+
   try {
     const response = await fetch(`/queue/remove/${encodeURIComponent(trackUri)}`, {
       method: 'POST',
-      credentials: 'include',
       headers: {
         'Content-Type': 'application/json'
-      }
+      },
+      credentials: 'include'
     });
 
     if (response.ok) {
-      console.log('Track removed from queue:', trackUri);
+      console.log('Successfully removed track from queue');
+      if (typeof refreshQueueDisplay === 'function') {
+        refreshQueueDisplay();
+      }
     } else {
       console.log('Failed to remove track from queue:', trackUri);
     }
@@ -229,12 +233,10 @@ async function removeTrackFromQueue(trackUri) {
   }
 }
 
-// Function to hide the Spotify player
 function hideSpotifyPlayer() {
   const spotifyWrapper = document.getElementById('spotify-embed-wrapper');
   if (spotifyWrapper) {
     spotifyWrapper.style.display = 'none';
-    // Reset body padding when player is hidden
     document.body.style.paddingTop = '20px';
   }
 }
@@ -243,8 +245,6 @@ function hideSpotifyPlayer() {
 window.initializeSpotifyPlayer = initializeSpotifyPlayer;
 window.togglePlayback = togglePlayback;
 window.nextTrack = nextTrack;
-window.autoPlayNext = autoPlayNext;
 window.playTrackFromQueue = playTrackFromQueue;
 window.removeTrackFromQueue = removeTrackFromQueue;
-window.hideSpotifyPlayer = hideSpotifyPlayer;
 window.hideSpotifyPlayer = hideSpotifyPlayer;

@@ -126,12 +126,17 @@ function displayChatMessage(data) {
   const chatMessages = document.getElementById('chat-messages');
   if (!chatMessages) return;
   
+  // Format timestamp to local time
+  const timeString = data.timestamp 
+    ? new Date(data.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    : new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); // Fallback to current time
+  
   const messageDiv = document.createElement('div');
   messageDiv.className = 'chat-message';
   messageDiv.innerHTML = `
     <span class="chat-user">${data.user}:</span>
     <span class="chat-text">${data.message}</span>
-    <span class="chat-time">${new Date(data.timestamp).toLocaleTimeString()}</span>
+    <span class="chat-time">${timeString}</span>
   `;
   
   chatMessages.appendChild(messageDiv);
@@ -147,12 +152,17 @@ function loadChatHistory(messages) {
   
   // Load all messages from history
   messages.forEach(data => {
+    // Format timestamp to local time
+    const timeString = data.timestamp 
+      ? new Date(data.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      : '';
+    
     const messageDiv = document.createElement('div');
     messageDiv.className = 'chat-message';
     messageDiv.innerHTML = `
       <span class="chat-user">${data.user}:</span>
       <span class="chat-text">${data.message}</span>
-      <span class="chat-time">${new Date(data.timestamp).toLocaleTimeString()}</span>
+      <span class="chat-time">${timeString}</span>
     `;
     chatMessages.appendChild(messageDiv);
   });
@@ -170,9 +180,12 @@ function sendChatMessage(event) {
   if (!message) return;
   
   if (typeof socket !== 'undefined') {
-    // The backend will get user info from session, so we only send the message
+    // Try multiple sources for username
+    const user = window.displayName || window.userId || window.userRole || 'Anonymous';
+    
     socket.emit('chat_message', {
-      message: message
+      message: message,
+      user: user
     });
   }
   

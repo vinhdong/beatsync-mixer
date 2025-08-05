@@ -397,6 +397,73 @@ function closeModal(modalId) {
   }
 }
 
+// Add track to queue from playlist
+async function addToQueue(artistName, songTitle, albumName, buttonElement) {
+  try {
+    console.log('Adding to queue from playlist:', songTitle, 'by', artistName);
+    
+    const originalText = buttonElement.textContent;
+    buttonElement.textContent = 'Adding...';
+    buttonElement.disabled = true;
+    
+    // Format track name exactly like search results do
+    const trackName = `${songTitle} - ${artistName}`;
+    
+    const response = await fetch('/search/add-to-queue', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        track_uri: `playlist:${artistName.replace(/\s+/g, '')}:${songTitle.replace(/\s+/g, '')}`, // Create a unique URI
+        track_name: trackName
+      })
+    });
+    
+    const data = await response.json();
+    
+    if (response.ok) {
+      console.log('Track added successfully:', data.message);
+      
+      if (typeof updateQueueCount === 'function') {
+        updateQueueCount();
+      }
+      
+      setTimeout(() => {
+        if (typeof loadQueue === 'function') {
+          loadQueue();
+        } else if (typeof refreshQueueDisplay === 'function') {
+          refreshQueueDisplay();
+        }
+      }, 500);
+      
+      buttonElement.textContent = '✅ Added';
+      buttonElement.style.backgroundColor = '#27ae60';
+      setTimeout(() => {
+        buttonElement.textContent = originalText;
+        buttonElement.style.backgroundColor = '#1db954';
+        buttonElement.disabled = false;
+      }, 2000);
+      
+    } else {
+      console.error('Failed to add track:', data.error);
+      showNotification(`❌ ${data.error}`, 'error');
+      
+      buttonElement.textContent = originalText;
+      buttonElement.disabled = false;
+    }
+    
+  } catch (error) {
+    console.error('Error adding track to queue:', error);
+    showNotification('❌ Failed to add track to queue', 'error');
+    
+    if (buttonElement) {
+      buttonElement.textContent = '➕ Queue';
+      buttonElement.disabled = false;
+    }
+  }
+}
+
 // Exports
 window.initializePlaylistUI = initializePlaylistUI;
 window.loadCustomPlaylists = loadCustomPlaylists;
@@ -407,5 +474,6 @@ window.viewPlaylistTracks = viewPlaylistTracks;
 window.removeTrackFromPlaylist = removeTrackFromPlaylist;
 window.deletePlaylist = deletePlaylist;
 window.closeModal = closeModal;
+window.addToQueue = addToQueue;
 
 initializePlaylistUI();

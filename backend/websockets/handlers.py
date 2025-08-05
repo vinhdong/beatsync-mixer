@@ -13,6 +13,10 @@ from backend.utils.cache import get_currently_playing, get_queue_snapshot, updat
 # SocketIO instance will be imported from app factory
 socketio = None
 
+# Track active listeners for numbering
+active_listeners = {}  # {session_id: listener_number}
+next_listener_number = 1
+
 
 def init_socketio(app):
     """Initialize Socket.IO with the Flask app"""
@@ -38,6 +42,37 @@ def init_socketio(app):
     return socketio
 
 
+def assign_listener_number(session_id):
+    """Assign a listener number to a new listener"""
+    global next_listener_number, active_listeners
+    
+    # Find the smallest available number
+    used_numbers = set(active_listeners.values())
+    listener_number = 1
+    while listener_number in used_numbers:
+        listener_number += 1
+    
+    active_listeners[session_id] = listener_number
+    print(f"Assigned listener number {listener_number} to session {session_id}")
+    return listener_number
+
+
+def release_listener_number(session_id):
+    """Release a listener number when a listener disconnects"""
+    global active_listeners
+    
+    if session_id in active_listeners:
+        listener_number = active_listeners.pop(session_id)
+        print(f"Released listener number {listener_number} from session {session_id}")
+        return listener_number
+    return None
+
+
+def get_listener_display_name(listener_number):
+    """Generate display name for a listener"""
+    return f"Listener {listener_number}"
+
+
 def register_handlers():
     """Register all Socket.IO event handlers"""
     
@@ -49,11 +84,23 @@ def register_handlers():
             user_id = session.get("user_id", "unknown")
             display_name = session.get("display_name", "Unknown")
             
-            if not user_role or user_role not in ["host", "listener"]:
+            if not user_role or user_role not in ["host", "listener", "guest"]:
                 emit("error", {"message": "Authentication required"})
                 return
             
             print(f"[CONNECTION] User connected: {display_name} (role: {user_role}, user_id: {user_id}, sid: {request.sid})")
+            
+            # For listeners that don't have a number yet, assign one now
+            if user_role == "listener" and not session.get("listener_number"):
+                listener_number = assign_listener_number(request.sid)
+                display_name = get_listener_display_name(listener_number)
+                session["listener_number"] = listener_number
+                session["display_name"] = display_name
+                print(f"[CONNECTION] Assigned listener number {listener_number} to sid {request.sid}")
+                
+                # Notify the client of their new display name
+                emit("display_name_updated", {"display_name": display_name})
+            
             emit("connected", {"role": user_role, "message": "Connected successfully"})
             
         except Exception as e:
@@ -78,13 +125,22 @@ def register_handlers():
         """Handle client disconnection"""
         user_name = session.get("display_name", "Unknown")
         user_id = session.get("user_id", "unknown")
-        print(f"[DISCONNECTION] User disconnected: {user_name} (user_id: {user_id}, sid: {request.sid}, reason: {reason})")
+        user_role = session.get("role", "unknown")
+        print(f"[DISCONNECTION] User disconnected: {user_name} (user_id: {user_id}, role: {user_role}, sid: {request.sid}, reason: {reason})")
+        
+        # Release listener number on disconnect for listeners
+        if user_role == "listener":
+            released_number = release_listener_number(request.sid)
+            if released_number:
+                print(f"[DISCONNECTION] Released listener number {released_number}")
 
 
     @socketio.on_error_default
     def default_error_handler(e):
-        """Handle Socket.IO errors"""
-        print(f"Socket.IO error: {e}")
+        """Default error handler for all events"""
+        print(f"[SOCKET ERROR] Error occurred: {e}")
+        print(f"[SOCKET ERROR] Event: {request.event}")
+        print(f"[SOCKET ERROR] Namespace: {request.namespace}")
         return False
 
 
@@ -229,7 +285,8 @@ def register_handlers():
                 emit("error", {"message": "You must be logged in to chat"})
                 return
             
-            user = session.get("display_name", "Anonymous")
+            # Try session first, then frontend data, then fallback
+            user = session.get("display_name") or data.get("user", "Anonymous")
             message = data.get("message", "")
             
             if not message.strip():
@@ -240,14 +297,13 @@ def register_handlers():
                 chat_msg = ChatMessage(user=user, message=message.strip())
                 db.add(chat_msg)
                 
-                socketio.emit(
-                    "chat_message",
-                    {
-                        "user": chat_msg.user,
-                        "message": chat_msg.message,
-                        "timestamp": chat_msg.timestamp.isoformat() if chat_msg.timestamp else None,
-                    }
-                )
+                response_data = {
+                    "user": chat_msg.user,
+                    "message": chat_msg.message,
+                    "timestamp": chat_msg.timestamp.replace(tzinfo=timezone.utc).isoformat() if chat_msg.timestamp else None,
+                }
+                
+                socketio.emit("chat_message", response_data)
                 
         except Exception as e:
             print(f"Error in chat_message: {e}")
@@ -269,7 +325,7 @@ def register_handlers():
                     {
                         "user": msg.user,
                         "message": msg.message,
-                        "timestamp": msg.timestamp.isoformat() if msg.timestamp else None,
+                        "timestamp": msg.timestamp.replace(tzinfo=timezone.utc).isoformat() if msg.timestamp else None,
                     }
                     for msg in recent_messages
                 ]
@@ -356,3 +412,55 @@ def send_initial_data_async(client_sid, app, user_role):
         except Exception as e:
             print(f"Error sending initial data: {e}")
             socketio.emit("error", {"message": "Error loading initial data"}, room=client_sid)
+
+
+    @socketio.on("restart_session")
+    def handle_restart_session():
+        """Handle restart session request via socket - Only available to hosts"""
+        try:
+            if session.get("role") != "host":
+                emit("error", {"message": "Only hosts can restart sessions"})
+                return
+                
+            import os
+            from backend.models.models import Vote, QueueItem, ChatMessage
+            
+            # Remove host file
+            host_file = 'current_host.txt'
+            if os.path.exists(host_file):
+                os.remove(host_file)
+            
+            # Clear the queue, votes, chat, and currently playing
+            with get_db() as db:
+                # Clear all votes
+                votes_deleted = db.query(Vote).delete()
+                
+                # Clear all queue items
+                queue_deleted = db.query(QueueItem).delete()
+                
+                # Clear all chat messages
+                chat_deleted = db.query(ChatMessage).delete()
+                
+                db.commit()
+            
+            # Clear all cached data
+            try:
+                from flask import current_app
+                cache = current_app.cache
+                cache.clear()
+                
+                # Also clear in-memory cache
+                from backend.utils.cache import clear_in_memory_cache
+                clear_in_memory_cache()
+                
+            except Exception as e:
+                pass  # Silently handle cache clearing errors
+            
+            # Emit session restart to all clients
+            socketio.emit("session_restarted", {
+                "message": "Session has been restarted. Please refresh your page.",
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            })
+            
+        except Exception as e:
+            emit("error", {"message": "Failed to restart session"})

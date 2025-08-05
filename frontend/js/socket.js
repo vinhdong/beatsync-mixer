@@ -7,12 +7,17 @@ const socket = io();
 let socketConnected = false;
 const socketId = Math.random().toString(36).substr(2, 8);
 
+// Make socket globally accessible
+window.socket = socket;
+window.socketConnected = socketConnected;
+
 console.log(`[SOCKET ${socketId}] Socket created for role:`, window.userRole);
 
 // Connection events
 socket.on('connect', function() {
   console.log(`[SOCKET ${socketId}] Connected`);
   socketConnected = true;
+  window.socketConnected = true;
   
   // Update connection status
   const statusElement = document.querySelector('.connection-status');
@@ -22,11 +27,18 @@ socket.on('connect', function() {
   
   // Load chat history after connection
   socket.emit("load_chat_history");
+  
+  // Load queue display on initial connection
+  if (typeof refreshQueueDisplay === 'function') {
+    console.log('Loading initial queue on socket connection');
+    setTimeout(() => refreshQueueDisplay(), 500); // Small delay to ensure DOM is ready
+  }
 });
 
 socket.on('disconnect', function() {
   console.log(`[SOCKET ${socketId}] Disconnected`);
   socketConnected = false;
+  window.socketConnected = false;
 });
 
 socket.on('error', function(error) {
@@ -66,6 +78,23 @@ socket.on("playback_resumed", data => {
   console.log('Playback resumed:', data);
   if (typeof updatePlayPauseButton === 'function') {
     updatePlayPauseButton(true);
+  }
+});
+
+// Handle display name updates for listeners
+socket.on("display_name_updated", data => {
+  console.log('Display name updated:', data.display_name);
+  window.displayName = data.display_name;
+  
+  // Update the UI to show the new name
+  if (typeof updateUserDisplayName === 'function') {
+    updateUserDisplayName(data.display_name);
+  }
+  
+  // Update welcome message if it exists
+  const nameSpan = document.querySelector('.user-name');
+  if (nameSpan) {
+    nameSpan.innerHTML = `👋 Welcome, <strong>${data.display_name}</strong>!`;
   }
 });
 
@@ -140,6 +169,21 @@ socket.on("chat_history", data => {
   }
 });
 
+// Session restart handling
+socket.on("session_restarted", data => {
+  console.log('Session restarted:', data);
+  
+  // Show notification
+  if (typeof showNotification === 'function') {
+    showNotification(`🔄 ${data.message}`, 'info');
+  }
+  
+  // Redirect to home page after a short delay
+  setTimeout(() => {
+    window.location.href = '/';
+  }, 3000);
+});
+
 // Error handling
 socket.on("error", data => {
   console.log('Socket error:', data);
@@ -152,6 +196,13 @@ socket.on("error", data => {
       alert(`Error: ${data.message}`);
     }
   }
+});
+
+// Session restart event listener
+socket.on('session_restarted', function(data) {
+  console.log('Session restarted:', data);
+  alert('Session has been restarted! The page will redirect you to role selection.');
+  window.location.href = '/select-role';
 });
 
 // Export socket for global access

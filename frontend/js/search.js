@@ -137,7 +137,7 @@ async function addTrackToQueue(trackUri, trackName, artistNames) {
     
     if (response.ok) {
       console.log('Track added successfully:', data.message);
-      showNotification(`✅ ${data.message}`, 'success');
+      // Removed notification: showNotification(`✅ ${data.message}`, 'success');
       
       if (typeof updateQueueCount === 'function') {
         updateQueueCount();
@@ -210,11 +210,27 @@ async function loadRecs(trackUri, safeTrackId) {
       recsContainer.innerHTML = `<div class="recommendation-item" style="color: #666; font-style: italic; padding: 10px; text-align: center;">${message}</div>`;
     } else {
       recsContainer.innerHTML = recommendations.map(rec => `
-        <div class="recommendation-item" style="padding: 8px; border-bottom: 1px solid #444; margin-bottom: 5px;">
-          <a href="${rec.url}" target="_blank" class="recommendation-link" style="color: #1db954; text-decoration: none;">
-            <strong>${rec.artist}</strong> — ${rec.title}
-          </a>
-          ${rec.source ? `<small style="color: #666; margin-left: 10px; font-size: 10px;">(${rec.source})</small>` : ''}
+        <div class="recommendation-item" style="padding: 8px; border-bottom: 1px solid #444; margin-bottom: 5px; display: flex; justify-content: space-between; align-items: center;">
+          <div style="flex: 1;">
+            <a href="${rec.url}" target="_blank" class="recommendation-link" style="color: #1db954; text-decoration: none;">
+              <strong>${rec.artist}</strong> — ${rec.title}
+            </a>
+            ${rec.source ? `<small style="color: #666; margin-left: 10px; font-size: 10px;">(${rec.source})</small>` : ''}
+          </div>
+          <button onclick="addToQueueFromRecommendation('${rec.artist.replace(/'/g, "\\'")}', '${rec.title.replace(/'/g, "\\'")}', this)" style="
+            background-color: #1db954;
+            color: white;
+            border: none;
+            padding: 6px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.8em;
+            margin-left: 10px;
+            flex-shrink: 0;
+            transition: background-color 0.3s ease;
+          " onmouseover="this.style.backgroundColor='#1ed760'" onmouseout="this.style.backgroundColor='#1db954'">
+            ➕ Queue
+          </button>
         </div>
       `).join('');
     }
@@ -225,8 +241,76 @@ async function loadRecs(trackUri, safeTrackId) {
   }
 }
 
+// Add track to queue from recommendation
+async function addToQueueFromRecommendation(artistName, songTitle, buttonElement) {
+  try {
+    console.log('Adding recommendation to queue:', songTitle, 'by', artistName);
+    
+    const originalText = buttonElement.textContent;
+    buttonElement.textContent = 'Adding...';
+    buttonElement.disabled = true;
+    
+    // Format track name exactly like playlist tracks do
+    const trackName = `${songTitle} - ${artistName}`;
+    
+    const response = await fetch('/search/add-to-queue', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        track_uri: `recommendation:${artistName.replace(/\s+/g, '')}:${songTitle.replace(/\s+/g, '')}`, // Create a unique URI
+        track_name: trackName
+      })
+    });
+    
+    const data = await response.json();
+    
+    if (response.ok) {
+      console.log('Recommendation track added successfully:', data.message);
+      
+      if (typeof updateQueueCount === 'function') {
+        updateQueueCount();
+      }
+      
+      setTimeout(() => {
+        if (typeof loadQueue === 'function') {
+          loadQueue();
+        } else if (typeof refreshQueueDisplay === 'function') {
+          refreshQueueDisplay();
+        }
+      }, 500);
+      
+      buttonElement.textContent = '✅ Added';
+      buttonElement.style.backgroundColor = '#27ae60';
+      setTimeout(() => {
+        buttonElement.textContent = originalText;
+        buttonElement.style.backgroundColor = '#1db954';
+        buttonElement.disabled = false;
+      }, 2000);
+      
+    } else {
+      console.error('Failed to add recommendation track:', data.error);
+      showNotification(`❌ ${data.error}`, 'error');
+      
+      buttonElement.textContent = originalText;
+      buttonElement.disabled = false;
+    }
+    
+  } catch (error) {
+    console.error('Error adding recommendation track to queue:', error);
+    showNotification('❌ Failed to add track to queue', 'error');
+    
+    if (buttonElement) {
+      buttonElement.textContent = '➕ Queue';
+      buttonElement.disabled = false;
+    }
+  }
+}
+
 // Export functions
 window.setupAutoSearch = setupAutoSearch;
 window.searchMusic = searchMusic;
 window.addTrackToQueue = addTrackToQueue;
 window.loadRecs = loadRecs;
+window.addToQueueFromRecommendation = addToQueueFromRecommendation;

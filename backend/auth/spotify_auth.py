@@ -224,16 +224,17 @@ def join_listener():
         guest_id = f"listener_{int(time.time())}_{request.remote_addr.replace('.', '')[-4:]}"
         
         # Set listener session without Spotify authentication
+        # Listener number will be assigned when they connect via WebSocket
         session["role"] = "listener"
         session["user_id"] = guest_id
-        session["display_name"] = "Listener"
+        session["display_name"] = "Listener"  # Temporary, will be updated on WebSocket connect
         session["initialized"] = True
         session["created_at"] = datetime.now(timezone.utc).isoformat()
         
         # Make session permanent
         session.permanent = True
         
-        print(f"Listener joined: {guest_id}")
+        print(f"Listener joined: {guest_id}, number will be assigned on WebSocket connect")
         
         return redirect("/")
         

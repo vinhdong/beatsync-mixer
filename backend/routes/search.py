@@ -51,6 +51,30 @@ def add_to_queue():
             print("ERROR: Missing track URI or name")
             return jsonify({"error": "Track URI and name are required"}), 400
         
+        # Check if this is a playlist track or recommendation that needs to be searched
+        if track_uri.startswith('playlist:') or track_uri.startswith('recommendation:'):
+            uri_type = 'playlist' if track_uri.startswith('playlist:') else 'recommendation'
+            print(f"INFO: {uri_type.title()} track detected, searching Spotify for actual track")
+            
+            # Extract search query from track_name (format: "Song Title - Artist Name")
+            search_query = track_name
+            
+            # Search for the track using Spotify API
+            search_results = search_tracks(search_query, limit=1)
+            
+            if not search_results.get('tracks') or len(search_results['tracks']) == 0:
+                print(f"ERROR: No Spotify tracks found for query: {search_query}")
+                return jsonify({"error": f"Could not find '{track_name}' on Spotify"}), 404
+            
+            # Use the first search result
+            spotify_track = search_results['tracks'][0]
+            track_uri = spotify_track['uri']
+            track_name = f"{spotify_track['name']} - {spotify_track['artist_names']}"
+            
+            print(f"SUCCESS: Found Spotify track: {track_uri} - {track_name}")
+        else:
+            print(f"INFO: Regular track (not playlist/recommendation), using as-is")
+        
         # Check if track is already in queue
         with get_db() as db:
             existing = db.query(QueueItem).filter_by(track_uri=track_uri).first()
