@@ -23,55 +23,69 @@ def get_similar_tracks(artist, title, limit=5):
         'limit': str(min(limit, 3))  # Request fewer tracks for faster response
     }
     
-    # Try direct API call first with shorter timeout
-    try:
-        print(f"🎵 Getting Last.fm recommendations for: {artist} - {title}")
-        
-        response = requests.get(
-            "http://ws.audioscrobbler.com/2.0/",
-            params=params,
-            timeout=(3, 5),  # Much shorter timeout: 3s connect, 5s read
-            headers={'User-Agent': 'BeatSyncMixer/1.0'}
-        )
-        
-        print(f"Last.fm API response status: {response.status_code}")
-        
-        if response.status_code == 200:
-            data = response.json()
+    # Try multiple approaches for better reliability on Heroku
+    print(f"🎵 Getting Last.fm recommendations for: {artist} - {title}")
+    
+    # Method 1: Try HTTP first (often more reliable than HTTPS on Heroku)
+    urls_to_try = [
+        "http://ws.audioscrobbler.com/2.0/",
+        "https://ws.audioscrobbler.com/2.0/"
+    ]
+    
+    for attempt, url in enumerate(urls_to_try):
+        try:
+            print(f"Attempt {attempt + 1}: {url}")
             
-            if 'error' in data:
-                print(f"❌ Last.fm API error: {data.get('message', 'Unknown error')}")
-                return []
+            response = requests.get(
+                url,
+                params=params,
+                timeout=(4, 8),  # Slightly longer timeout for better success rate
+                headers={
+                    'User-Agent': 'BeatSyncMixer/1.0',
+                    'Accept': 'application/json'
+                }
+            )
             
-            similar_tracks = []
-            tracks = data.get('similartracks', {}).get('track', [])
+            print(f"Last.fm API response status: {response.status_code}")
             
-            if isinstance(tracks, dict):
-                tracks = [tracks]
-            
-            for track in tracks[:limit]:
-                artist_name = track.get('artist', {})
-                if isinstance(artist_name, dict):
-                    artist_name = artist_name.get('name', 'Unknown Artist')
-                elif isinstance(artist_name, str):
-                    artist_name = artist_name
-                else:
-                    artist_name = 'Unknown Artist'
+            if response.status_code == 200:
+                data = response.json()
                 
-                similar_tracks.append({
-                    'artist': artist_name,
-                    'title': track.get('name', 'Unknown Title'),
-                    'url': track.get('url', '#'),
-                    'source': 'Last.fm'
-                })
-            
-            print(f"✅ Found {len(similar_tracks)} recommendations")
-            return similar_tracks
-        else:
-            print(f"❌ Last.fm API returned status {response.status_code}: {response.text}")
-            
-    except Exception as e:
-        print(f"❌ Last.fm API call failed: {e}")
+                if 'error' in data:
+                    print(f"❌ Last.fm API error: {data.get('message', 'Unknown error')}")
+                    continue  # Try next URL
+                
+                similar_tracks = []
+                tracks = data.get('similartracks', {}).get('track', [])
+                
+                if isinstance(tracks, dict):
+                    tracks = [tracks]
+                
+                for track in tracks[:limit]:
+                    artist_name = track.get('artist', {})
+                    if isinstance(artist_name, dict):
+                        artist_name = artist_name.get('name', 'Unknown Artist')
+                    elif isinstance(artist_name, str):
+                        artist_name = artist_name
+                    else:
+                        artist_name = 'Unknown Artist'
+                    
+                    similar_tracks.append({
+                        'artist': artist_name,
+                        'title': track.get('name', 'Unknown Title'),
+                        'url': track.get('url', '#'),
+                        'source': 'Last.fm'
+                    })
+                
+                print(f"✅ Found {len(similar_tracks)} recommendations")
+                return similar_tracks
+            else:
+                print(f"❌ Last.fm API returned status {response.status_code}: {response.text}")
+                continue  # Try next URL
+                
+        except Exception as e:
+            print(f"❌ Last.fm API call failed with {url}: {e}")
+            continue  # Try next URL
     
     # If we get here, the API call failed - try faster IP fallback
     print("🔄 Trying IP fallback...")

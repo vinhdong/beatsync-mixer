@@ -14,6 +14,129 @@ import spotipy
 IS_DEVELOPMENT = os.getenv("FLASK_ENV") != "production"
 
 
+def make_spotify_api_request(endpoint, access_token, method='GET', data=None, params=None, timeout_config=(2, 4)):
+    """
+    Centralized function for making Spotify API requests with DNS fallback.
+    Updated with more robust error handling and better IP addresses.
+    """
+    if not access_token:
+        print("❌ No access token provided")
+        return None
+    
+    # Base URL for Spotify API
+    base_url = "https://api.spotify.com/v1"
+    full_url = f"{base_url}/{endpoint.lstrip('/')}"
+    
+    headers = {
+        'Authorization': f'Bearer {access_token}',
+        'Content-Type': 'application/json',
+        'User-Agent': 'BeatSyncMixer/1.0'
+    }
+    
+    # Development mode: use regular API for speed
+    if IS_DEVELOPMENT:
+        try:
+            print(f"Development: Making {method} request to {endpoint}")
+            response = requests.request(
+                method=method,
+                url=full_url,
+                headers=headers,
+                json=data if method != 'GET' else None,
+                params=params,
+                timeout=(5, 10)  # Generous timeout for dev
+            )
+            
+            if response.status_code in [200, 201, 204]:
+                return response.json() if response.content else {}
+            elif response.status_code == 401:
+                print("❌ Unauthorized - token expired")
+                return None
+            else:
+                print(f"❌ Request failed: {response.status_code} - {response.text}")
+                return None
+                
+        except Exception as e:
+            print(f"❌ Development API request failed: {e}")
+            return None
+    
+    # Production: Use manual IP resolution with updated server IPs
+    updated_ips = [
+        "35.186.224.24",     # Google Cloud
+        "104.154.127.126",   # Google Cloud  
+        "34.102.136.180",    # Google Cloud
+        "35.232.142.147",    # Additional Google Cloud
+        "34.118.98.43",      # Additional Google Cloud
+        "35.227.23.12"       # Additional Google Cloud
+    ]
+    
+    print(f"Production: Trying {len(updated_ips)} IP addresses for {endpoint}")
+    
+    for i, ip in enumerate(updated_ips):
+        try:
+            # Replace hostname with IP but keep Host header
+            ip_url = full_url.replace("api.spotify.com", ip)
+            ip_headers = headers.copy()
+            ip_headers['Host'] = 'api.spotify.com'
+            
+            print(f"Attempt {i+1}/{len(updated_ips)}: {ip}")
+            
+            response = requests.request(
+                method=method,
+                url=ip_url,
+                headers=ip_headers,
+                json=data if method != 'GET' else None,
+                params=params,
+                timeout=timeout_config,
+                verify=False  # Skip SSL verification for IP connections
+            )
+            
+            if response.status_code in [200, 201, 204]:
+                result = response.json() if response.content else {}
+                print(f"✅ Success with IP {ip}")
+                return result
+            elif response.status_code == 401:
+                print(f"❌ Unauthorized with IP {ip} - token expired")
+                return None
+            elif response.status_code == 429:
+                print(f"⚠️ Rate limited with IP {ip}")
+                time.sleep(1)  # Brief pause for rate limiting
+                continue
+            else:
+                print(f"❌ Failed with IP {ip}: {response.status_code}")
+                continue
+                
+        except Exception as e:
+            print(f"❌ Error with IP {ip}: {e}")
+            continue
+    
+    # Final fallback: try regular DNS (rarely works on Heroku but worth trying)
+    try:
+        print("🔄 All IPs failed, trying regular DNS as last resort...")
+        response = requests.request(
+            method=method,
+            url=full_url,
+            headers=headers,
+            json=data if method != 'GET' else None,
+            params=params,
+            timeout=(6, 12)  # Longer timeout for DNS fallback
+        )
+        
+        if response.status_code in [200, 201, 204]:
+            result = response.json() if response.content else {}
+            print("✅ Success with regular DNS")
+            return result
+        else:
+            print(f"❌ DNS fallback failed: {response.status_code}")
+            return None
+            
+    except Exception as e:
+        print(f"❌ DNS fallback error: {e}")
+        return None
+
+
+
+
+
 # Initialize Spotify OAuth
 spotify_oauth = SpotifyOAuth(
     client_id=os.getenv("SPOTIFY_CLIENT_ID"),
@@ -148,126 +271,27 @@ def refresh_token(refresh_token):
 
 
 def fetch_user_profile(access_token):
-    """Fetch user profile using optimal method based on environment"""
-    
-    # In development, use regular spotipy for speed
-    if IS_DEVELOPMENT:
-        try:
-            print("Development mode: Using regular Spotify API for user profile")
-            sp = spotipy.Spotify(auth=access_token)
-            profile = sp.current_user()
-            print("Successfully fetched user profile via regular API")
-            return profile
-        except Exception as e:
-            print(f"Regular API failed: {e}, falling back to manual IP")
-    
-    # Production or fallback: use manual IP approach
-    ip_addresses = ["35.186.224.24", "104.154.127.126", "34.102.136.180"]
-    
-    for ip in ip_addresses:
-        try:
-            url = f"https://{ip}/v1/me"
-            headers = {
-                'Host': 'api.spotify.com',
-                'Authorization': f'Bearer {access_token}',
-                'Content-Type': 'application/json'
-            }
-            
-            req_session = requests.Session()
-            
-            response = req_session.get(
-                url,
-                headers=headers,
-                timeout=(3, 3),
-                verify=False
-            )
-            
-            if response.status_code == 200:
-                return response.json()
-                
-        except Exception as e:
-            continue
-    
-    return None
+    """Fetch user profile using centralized API request function"""
+    print("🔍 Fetching user profile...")
+    return make_spotify_api_request("me", access_token, timeout_config=(3, 6))
 
 
 def fetch_playlists(access_token, fast_timeout=False):
-    """Fetch user playlists using optimal method based on environment"""
+    """Fetch user playlists using centralized API request function"""
+    print("🎵 Fetching user playlists...")
     
-    # In development, use regular spotipy for speed
-    if IS_DEVELOPMENT:
-        try:
-            print("Development mode: Using regular Spotify API for playlists")
-            sp = spotipy.Spotify(auth=access_token)
-            data = sp.current_user_playlists(limit=15, offset=0)
-            print(f"Successfully fetched {len(data.get('items', []))} playlists via regular API")
-            return data
-        except Exception as e:
-            print(f"Regular API failed: {e}, falling back to manual IP")
+    # Set timeout based on fast_timeout parameter
+    timeout_config = (1, 2) if fast_timeout else (3, 6)
     
-    # Production: Use manual IP approach with optimized timeouts
-    ip_addresses = ["35.186.224.24", "104.154.127.126", "34.102.136.180"]
-    
-    # Faster timeouts for production
-    timeout_config = (1, 2) if fast_timeout else (2, 3)
-    
-    print(f"Production: Using manual IP approach with {len(ip_addresses)} IPs (timeout: {timeout_config})")
-    
-    for i, ip in enumerate(ip_addresses):
-        try:
-            print(f"Trying IP {i+1}/{len(ip_addresses)}: {ip}")
-            url = f"https://{ip}/v1/me/playlists?limit=15&offset=0"
-            headers = {
-                'Host': 'api.spotify.com',
-                'Authorization': f'Bearer {access_token}',
-                'Content-Type': 'application/json'
-            }
-            
-            response = requests.get(
-                url,
-                headers=headers,
-                timeout=timeout_config,
-                verify=False
-            )
-            
-            print(f"Response from {ip}: Status {response.status_code}")
-            
-            if response.status_code == 200:
-                data = response.json()
-                print(f"Successfully fetched playlists from {ip}: {len(data.get('items', []))} playlists")
-                return data
-            elif response.status_code == 401:
-                print(f"Authentication failed with {ip} - token may be expired")
-                return None
-            else:
-                print(f"Failed with {ip}: {response.status_code}")
-                
-        except Exception as e:
-            print(f"Error with IP {ip}: {str(e)}")
-            continue
-    
-    # Last resort: try regular DNS (might work sometimes)
-    try:
-        print("All IPs failed, trying regular DNS as last resort...")
-        response = requests.get(
-            "https://api.spotify.com/v1/me/playlists?limit=15&offset=0",
-            headers={
-                'Authorization': f'Bearer {access_token}',
-                'Content-Type': 'application/json'
-            },
-            timeout=(1, 2)
-        )
-        
-        if response.status_code == 200:
-            data = response.json()
-            print(f"Success with regular DNS: {len(data.get('items', []))} playlists")
-            return data
-            
-    except Exception as e:
-        print(f"Regular DNS also failed: {e}")
-    
-    print("All methods failed for playlists fetch")
-    return None
+    # Use the centralized function with proper parameters
+    params = {'limit': 15, 'offset': 0}
+    return make_spotify_api_request("me/playlists", access_token, params=params, timeout_config=timeout_config)
+
+
+def get_playback_state(access_token):
+    """Get current playback state using centralized API request function"""
+    print("🎵 Getting playback state...")
+    return make_spotify_api_request("me/player", access_token, timeout_config=(2, 4))
 
 
 def fetch_playlist_tracks(access_token, playlist_id, limit=50, offset=0):
@@ -657,3 +681,6 @@ def format_duration(duration_ms):
     minutes = total_seconds // 60
     seconds = total_seconds % 60
     return f"{minutes}:{seconds:02d}"
+
+
+
