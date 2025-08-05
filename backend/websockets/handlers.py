@@ -254,6 +254,33 @@ def register_handlers():
             emit("error", {"message": "Failed to send message"})
 
 
+    @socketio.on("load_chat_history")
+    def handle_load_chat_history():
+        """Load recent chat messages for a user"""
+        try:
+            with get_db() as db:
+                # Get last 50 messages
+                recent_messages = db.query(ChatMessage).order_by(ChatMessage.timestamp.desc()).limit(50).all()
+                
+                # Reverse to show oldest first
+                recent_messages.reverse()
+                
+                messages_data = [
+                    {
+                        "user": msg.user,
+                        "message": msg.message,
+                        "timestamp": msg.timestamp.isoformat() if msg.timestamp else None,
+                    }
+                    for msg in recent_messages
+                ]
+                
+                emit("chat_history", {"messages": messages_data})
+                
+        except Exception as e:
+            print(f"Error loading chat history: {e}")
+            emit("error", {"message": "Failed to load chat history"})
+
+
 def send_initial_data_async(client_sid, app, user_role):
     """Send initial data asynchronously to avoid blocking the connection"""
     with app.app_context():

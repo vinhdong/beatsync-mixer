@@ -138,6 +138,29 @@ function displayChatMessage(data) {
   chatMessages.scrollTop = chatMessages.scrollHeight;
 }
 
+function loadChatHistory(messages) {
+  const chatMessages = document.getElementById('chat-messages');
+  if (!chatMessages) return;
+  
+  // Clear existing messages
+  chatMessages.innerHTML = '';
+  
+  // Load all messages from history
+  messages.forEach(data => {
+    const messageDiv = document.createElement('div');
+    messageDiv.className = 'chat-message';
+    messageDiv.innerHTML = `
+      <span class="chat-user">${data.user}:</span>
+      <span class="chat-text">${data.message}</span>
+      <span class="chat-time">${new Date(data.timestamp).toLocaleTimeString()}</span>
+    `;
+    chatMessages.appendChild(messageDiv);
+  });
+  
+  // Scroll to bottom
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
 function sendChatMessage(event) {
   if (event) event.preventDefault();
   
@@ -147,17 +170,8 @@ function sendChatMessage(event) {
   if (!message) return;
   
   if (typeof socket !== 'undefined') {
-    // Debug logging to see what user info we have
-    console.log('Chat debug - window.displayName:', window.displayName);
-    console.log('Chat debug - window.userId:', window.userId);
-    console.log('Chat debug - window.userRole:', window.userRole);
-    
-    // Use session user info instead of random currentUser
-    const user = window.displayName || window.userId || 'Anonymous';
-    console.log('Chat debug - final user name:', user);
-    
+    // The backend will get user info from session, so we only send the message
     socket.emit('chat_message', {
-      user: user,
       message: message
     });
   }

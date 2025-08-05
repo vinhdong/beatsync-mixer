@@ -13,6 +13,15 @@ console.log(`[SOCKET ${socketId}] Socket created for role:`, window.userRole);
 socket.on('connect', function() {
   console.log(`[SOCKET ${socketId}] Connected`);
   socketConnected = true;
+  
+  // Update connection status
+  const statusElement = document.querySelector('.connection-status');
+  if (statusElement) {
+    statusElement.textContent = 'Connected';
+  }
+  
+  // Load chat history after connection
+  socket.emit("load_chat_history");
 });
 
 socket.on('disconnect', function() {
@@ -121,6 +130,13 @@ socket.on("chat_message", data => {
   console.log('Chat message received:', data);
   if (typeof displayChatMessage === 'function') {
     displayChatMessage(data);
+  }
+});
+
+socket.on("chat_history", data => {
+  console.log('Chat history received:', data);
+  if (typeof loadChatHistory === 'function') {
+    loadChatHistory(data.messages);
   }
 });
 
