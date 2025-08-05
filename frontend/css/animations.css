@@ -3,15 +3,20 @@
   0% {
     transform: translateY(0);
     background-color: rgba(29, 185, 84, 0.1);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    z-index: 10;
   }
   50% {
-    transform: translateY(-10px);
+    transform: translateY(-50px);
     background-color: rgba(29, 185, 84, 0.3);
-    box-shadow: 0 4px 12px rgba(29, 185, 84, 0.3);
+    box-shadow: 0 8px 24px rgba(29, 185, 84, 0.4);
+    z-index: 20;
   }
   100% {
     transform: translateY(0);
-    background-color: transparent;
+    background-color: rgba(29, 185, 84, 0.05);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    z-index: 10;
   }
 }
 
@@ -19,15 +24,20 @@
   0% {
     transform: translateY(0);
     background-color: rgba(255, 165, 0, 0.1);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    z-index: 10;
   }
   50% {
-    transform: translateY(10px);
+    transform: translateY(50px);
     background-color: rgba(255, 165, 0, 0.3);
-    box-shadow: 0 4px 12px rgba(255, 165, 0, 0.3);
+    box-shadow: 0 8px 24px rgba(255, 165, 0, 0.4);
+    z-index: 20;
   }
   100% {
     transform: translateY(0);
-    background-color: transparent;
+    background-color: rgba(255, 165, 0, 0.05);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    z-index: 10;
   }
 }
 
@@ -48,15 +58,12 @@
 
 @keyframes buttonPulse {
   0% {
-    transform: scale(1);
     background-color: transparent;
   }
   50% {
-    transform: scale(1.2);
     background-color: rgba(29, 185, 84, 0.3);
   }
   100% {
-    transform: scale(1);
-    background-color: #f0f0f0;
+    background-color: transparent;
   }
 }

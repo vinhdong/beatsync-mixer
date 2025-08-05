@@ -128,32 +128,34 @@ async function refreshQueueDisplay() {
 }
 
 function voteTrack(trackUri, voteType, buttonElement) {
-  fetch('/vote', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      track_uri: trackUri,
-      vote_type: voteType
-    })
-  })
-  .then(response => response.json())
-  .then(data => {
-    if (data.error) {
-      alert(data.error);
-    } else {
-      console.log('Vote submitted:', data);
-      
-      if (buttonElement) {
-        buttonElement.disabled = true;
-        buttonElement.textContent = voteType === 'up' ? '👍 Voted' : '👎 Voted';
-      }
-    }
-  })
-  .catch(error => {
-    console.error('Error voting:', error);
-    alert('Failed to submit vote');
+  // Check if socket is connected
+  if (typeof socket === 'undefined' || !socket.connected) {
+    console.error('Socket not connected, cannot vote');
+    alert('Connection lost. Please refresh the page and try again.');
+    return;
+  }
+
+  console.log(`Voting for track: ${trackUri}, vote: ${voteType}`);
+  
+  // Generate a unique client vote ID for tracking
+  const clientVoteId = Math.random().toString(36).substr(2, 8);
+  
+  // Add the green glow animation only
+  if (buttonElement) {
+    // Add the green glow animation
+    buttonElement.classList.add('just-voted');
+    
+    // Remove the animation class after it completes (0.3s)
+    setTimeout(() => {
+      buttonElement.classList.remove('just-voted');
+    }, 300);
+  }
+  
+  // Emit vote via Socket.IO
+  socket.emit('vote_add', {
+    track_uri: trackUri,
+    vote: voteType,
+    client_vote_id: clientVoteId
   });
 }
 
@@ -221,14 +223,150 @@ function queueTrack(trackUri, trackName) {
   });
 }
 
+function updateVoteDisplay(data) {
+  const trackUri = data.track_uri;
+  const upVotes = data.up_votes;
+  const downVotes = data.down_votes;
+  const netScore = upVotes - downVotes;
+  
+  // Create safe ID for selectors (same logic as in queue display)
+  const safeTrackId = trackUri.replace(/[^a-zA-Z0-9]/g, '_');
+  
+  // Update vote counts quietly without any animations
+  const upElement = document.getElementById(`up-${safeTrackId}`);
+  const downElement = document.getElementById(`down-${safeTrackId}`);
+  const scoreElement = document.getElementById(`score-${safeTrackId}`);
+  
+  if (upElement) {
+    upElement.textContent = upVotes;
+  }
+  
+  if (downElement) {
+    downElement.textContent = downVotes;
+  }
+  
+  if (scoreElement) {
+    scoreElement.textContent = `Score: ${netScore}`;
+    
+    // Update score color based on value
+    if (netScore > 0) {
+      scoreElement.style.color = '#1db954'; // Green for positive
+    } else if (netScore < 0) {
+      scoreElement.style.color = '#e74c3c'; // Red for negative
+    } else {
+      scoreElement.style.color = '#95a5a6'; // Gray for neutral
+    }
+  }
+}
+
+function reorderQueueByVotes() {
+  const queueContainer = document.getElementById("queue");
+  if (!queueContainer) return;
+  
+  const queueItems = Array.from(queueContainer.children);
+  if (queueItems.length === 0) return;
+  
+  // Store original positions and heights
+  const originalData = new Map();
+  queueItems.forEach((item, index) => {
+    const trackUri = item.getAttribute('data-track-uri');
+    const rect = item.getBoundingClientRect();
+    originalData.set(trackUri, {
+      index: index,
+      top: rect.top,
+      height: rect.height
+    });
+  });
+  
+  // Sort queue items by vote score (up votes - down votes), then by timestamp
+  queueItems.sort((a, b) => {
+    const scoreA = parseInt(a.querySelector('.vote-score')?.textContent?.replace('Score: ', '') || '0');
+    const scoreB = parseInt(b.querySelector('.vote-score')?.textContent?.replace('Score: ', '') || '0');
+    
+    // Sort by score (descending), then by timestamp (ascending) for tie-breaking
+    if (scoreB !== scoreA) {
+      return scoreB - scoreA; // Higher score first
+    }
+    
+    // If scores are equal, maintain original order (timestamp)
+    const timestampA = parseInt(a.getAttribute('data-timestamp') || '0');
+    const timestampB = parseInt(b.getAttribute('data-timestamp') || '0');
+    return timestampA - timestampB;
+  });
+  
+  // Reorder DOM elements first
+  queueContainer.innerHTML = '';
+  queueItems.forEach((item, index) => {
+    // Highlight the first track (next to play)
+    if (index === 0) {
+      item.classList.add('next-to-play');
+    } else {
+      item.classList.remove('next-to-play');
+    }
+    queueContainer.appendChild(item);
+  });
+  
+  // Calculate movements and animate
+  queueItems.forEach((item, newIndex) => {
+    const trackUri = item.getAttribute('data-track-uri');
+    const originalInfo = originalData.get(trackUri);
+    
+    if (originalInfo && originalInfo.index !== newIndex) {
+      // Calculate the distance this item needs to move
+      const oldIndex = originalInfo.index;
+      const itemsToMove = newIndex - oldIndex;
+      
+      // Calculate actual pixel distance based on average item height
+      const avgItemHeight = queueItems.reduce((sum, itm) => sum + itm.offsetHeight, 0) / queueItems.length;
+      const pixelDistance = itemsToMove * (avgItemHeight + 8); // +8 for margin
+      
+      // Set initial position to where it came from
+      item.style.transform = `translateY(${-pixelDistance}px)`;
+      item.style.transition = 'none';
+      
+      // Add visual highlight based on movement direction
+      if (itemsToMove < 0) {
+        // Moving up
+        item.classList.add('moving-up');
+        item.style.background = 'rgba(29, 185, 84, 0.1)';
+        item.style.boxShadow = '0 4px 12px rgba(29, 185, 84, 0.3)';
+      } else {
+        // Moving down  
+        item.classList.add('moving-down');
+        item.style.background = 'rgba(255, 165, 0, 0.1)';
+        item.style.boxShadow = '0 4px 12px rgba(255, 165, 0, 0.3)';
+      }
+      
+      // Force reflow then animate to final position
+      item.offsetHeight;
+      
+      // Animate to final position
+      item.style.transition = 'all 0.8s cubic-bezier(0.4, 0.0, 0.2, 1)';
+      item.style.transform = 'translateY(0)';
+      
+      // Clean up after animation
+      setTimeout(() => {
+        item.classList.remove('moving-up', 'moving-down');
+        item.style.background = '';
+        item.style.boxShadow = '';
+        item.style.transform = '';
+        item.style.transition = '';
+      }, 800);
+    }
+  });
+  
+  console.log('Queue reordered by votes with position-based animations');
+}
+
 // Export functions
 window.loadQueue = loadQueue;
 window.updateQueueDisplay = updateQueueDisplay;
 window.updateQueueCount = updateQueueCount;
 window.refreshQueueDisplay = refreshQueueDisplay;
 window.voteTrack = voteTrack;
+window.updateVoteDisplay = updateVoteDisplay;
 window.clearQueue = clearQueue;
 window.queueTrack = queueTrack;
 window.extractArtistFromTrackName = extractArtistFromTrackName;
 window.extractSongTitleFromTrackName = extractSongTitleFromTrackName;
-window.extractSongTitleFromTrackName = extractSongTitleFromTrackName;
+window.reorderQueueByVotes = reorderQueueByVotes;

@@ -3,6 +3,7 @@ Socket.IO event handlers for BeatSync Mixer.
 Handles real-time communication for queue, voting, and chat.
 """
 
+from datetime import datetime, timezone
 from flask import session, request
 from flask_socketio import SocketIO, emit
 from backend.models.models import get_db, QueueItem, Vote, ChatMessage
@@ -141,7 +142,10 @@ def register_handlers():
         try:
             # Check if user is authenticated (has any role)
             if not session.get("role"):
-                emit("error", {"message": "You must be logged in to vote"})
+                emit("error", {
+                    "message": "You must be logged in to vote",
+                    "client_vote_id": client_vote_id
+                })
                 return
             
             track_uri = data.get("track_uri")
@@ -150,11 +154,17 @@ def register_handlers():
             role = session.get("role", "unknown")
             
             if vote_type not in ["up", "down"]:
-                emit("error", {"message": "Invalid vote type"})
+                emit("error", {
+                    "message": "Invalid vote type",
+                    "client_vote_id": client_vote_id
+                })
                 return
 
             if not track_uri:
-                emit("error", {"message": "Invalid track URI"})
+                emit("error", {
+                    "message": "Invalid track URI",
+                    "client_vote_id": client_vote_id
+                })
                 return
 
             print(f"[VOTE {vote_event_id}] START: client_id={client_vote_id}, user_id={user_id}, role={role}, track_uri={track_uri}, vote_type={vote_type}")
@@ -162,24 +172,17 @@ def register_handlers():
             print(f"[VOTE {vote_event_id}] Request SID: {request.sid}")
 
             with get_db() as db:
-                # Use a single transaction to get current counts and add the new vote atomically
+                # Use a single transaction to add the vote
                 try:
-                    # Get vote counts BEFORE adding the new vote using a single query per type
-                    up_votes_before = (
-                        db.query(Vote).filter(Vote.track_uri == track_uri, Vote.vote_type == "up").count()
-                    )
-                    down_votes_before = (
-                        db.query(Vote).filter(Vote.track_uri == track_uri, Vote.vote_type == "down").count()
-                    )
-                    
-                    print(f"[VOTE {vote_event_id}] BEFORE: {up_votes_before} up, {down_votes_before} down")
-                    
-                    # Add the new vote
+                    # Always add a new vote (allow multiple votes from same user)
+                    print(f"[VOTE {vote_event_id}] ADDING: User {user_id} voting {vote_type}")
                     vote = Vote(track_uri=track_uri, vote_type=vote_type, user_id=user_id)
                     db.add(vote)
-                    db.flush()  # Flush to assign ID but don't commit yet
                     
-                    # Calculate updated vote counts for this track AFTER adding (single query per type)
+                    # Flush to apply changes before counting
+                    db.flush()
+                    
+                    # Calculate updated vote counts for this track (single query per type)
                     up_votes_after = (
                         db.query(Vote).filter(Vote.track_uri == track_uri, Vote.vote_type == "up").count()
                     )
@@ -187,19 +190,8 @@ def register_handlers():
                         db.query(Vote).filter(Vote.track_uri == track_uri, Vote.vote_type == "down").count()
                     )
                     
-                    print(f"[VOTE {vote_event_id}] AFTER: {up_votes_after} up, {down_votes_after} down")
-                    
-                    # Verify the vote was actually added (sanity check)
-                    expected_increase = 1 if vote_type == "up" else 0
-                    actual_increase = up_votes_after - up_votes_before
-                    
-                    if vote_type == "up" and actual_increase != 1:
-                        print(f"[VOTE {vote_event_id}] WARNING: Expected up vote increase of 1, got {actual_increase}")
-                    elif vote_type == "down" and (down_votes_after - down_votes_before) != 1:
-                        print(f"[VOTE {vote_event_id}] WARNING: Expected down vote increase of 1, got {down_votes_after - down_votes_before}")
-                    
-                    # Commit the transaction
-                    db.commit()
+                    print(f"[VOTE {vote_event_id}] FINAL: {up_votes_after} up, {down_votes_after} down")
+                    print(f"[VOTE {vote_event_id}] SENDING: track_uri={track_uri}, up_votes={up_votes_after}, down_votes={down_votes_after}")
                     
                     # Update queue snapshot in cache after vote changes
                     update_queue_snapshot()
@@ -212,16 +204,21 @@ def register_handlers():
                         {"track_uri": track_uri, "up_votes": up_votes_after, "down_votes": down_votes_after}
                     )
                     
+                    # Send success response to the voting client
+                    emit("vote_success", {"client_vote_id": client_vote_id})
+
                 except Exception as db_error:
                     print(f"[VOTE {vote_event_id}] DB ERROR: {db_error}")
-                    db.rollback()
                     raise db_error
                 
         except Exception as e:
             print(f"[VOTE {vote_event_id}] ERROR: {e}")
             import traceback
             traceback.print_exc()
-            emit("error", {"message": "Failed to process vote"})
+            emit("error", {
+                "message": "Failed to process vote",
+                "client_vote_id": client_vote_id
+            })
 
 
     @socketio.on("chat_message")

@@ -82,11 +82,22 @@ socket.on("track_removed", data => {
   }
 });
 
-socket.on("votes_updated", data => {
-  console.log('Votes updated:', data);
+socket.on("vote_updated", data => {
+  console.log('Vote updated:', data);
   if (typeof updateVoteDisplay === 'function') {
     updateVoteDisplay(data);
   }
+  
+  // Trigger queue reordering with animations after a brief delay
+  setTimeout(() => {
+    if (typeof reorderQueueByVotes === 'function') {
+      reorderQueueByVotes();
+    }
+  }, 100);
+});
+
+socket.on("vote_success", data => {
+  console.log('Vote successful:', data);
 });
 
 socket.on("queue_cleared", () => {
@@ -96,11 +107,34 @@ socket.on("queue_cleared", () => {
   }
 });
 
+socket.on("queue_reordered", () => {
+  console.log('Queue reordered due to voting');
+  if (typeof reorderQueueByVotes === 'function') {
+    reorderQueueByVotes();
+  } else if (typeof refreshQueueDisplay === 'function') {
+    refreshQueueDisplay();
+  }
+});
+
 // Chat events
 socket.on("chat_message", data => {
   console.log('Chat message received:', data);
   if (typeof displayChatMessage === 'function') {
     displayChatMessage(data);
+  }
+});
+
+// Error handling
+socket.on("error", data => {
+  console.log('Socket error:', data);
+  
+  if (data.message) {
+    // Show error notification if showNotification function exists
+    if (typeof showNotification === 'function') {
+      showNotification(`❌ ${data.message}`, 'error');
+    } else {
+      alert(`Error: ${data.message}`);
+    }
   }
 });
 

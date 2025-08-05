@@ -20,18 +20,32 @@ last_auto_play_time = 0
 
 @queue_bp.route("/")
 def get_queue():
-    """Get current queue items"""
+    """Get current queue items ordered by vote score (highest first)"""
     with get_db() as db:
         items = db.query(QueueItem).order_by(QueueItem.timestamp).all()
-        queue_data = [
-            {
+        
+        # Calculate vote scores for each item
+        queue_data = []
+        for item in items:
+            # Get vote counts for this track
+            votes = db.query(Vote).filter_by(track_uri=item.track_uri).all()
+            up_votes = len([v for v in votes if v.vote_type == 'up'])
+            down_votes = len([v for v in votes if v.vote_type == 'down'])
+            net_score = up_votes - down_votes
+            
+            queue_data.append({
                 "id": item.id,
                 "track_uri": item.track_uri,
                 "track_name": item.track_name,
                 "timestamp": item.timestamp.isoformat() if item.timestamp else None,
-            }
-            for item in items
-        ]
+                "upvotes": up_votes,
+                "downvotes": down_votes,
+                "vote_score": net_score
+            })
+        
+        # Sort by vote score (highest first), then by timestamp (oldest first) as tiebreaker
+        queue_data.sort(key=lambda x: (-x["vote_score"], x["timestamp"] or ""))
+        
         return jsonify({"queue": queue_data, "count": len(queue_data)})
 
 

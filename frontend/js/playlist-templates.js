@@ -326,6 +326,11 @@ function getPlaylistItemTemplate(playlist) {
 }
 
 function getTrackItemTemplate(track, playlistId) {
+  // Extract song title without artist to avoid duplication
+  const songTitle = window.extractSongTitleFromTrackName ? 
+    window.extractSongTitleFromTrackName(track.track_name) : 
+    track.track_name;
+    
   return `
     <div style="
       display: flex;
@@ -339,8 +344,8 @@ function getTrackItemTemplate(track, playlistId) {
       transition: all 0.3s ease;
     " onmouseover="this.style.backgroundColor='#e9ecef'; this.style.transform='translateY(-1px)'" onmouseout="this.style.backgroundColor='#f8f9fa'; this.style.transform='translateY(0)'">
       <div style="flex: 1; margin-right: 15px;">
-        <div style="font-weight: bold; margin-bottom: 6px; font-size: 1.05em; color: #333;">${track.track_name}</div>
-        <div style="color: #666; font-size: 0.95em; margin-bottom: 3px;">${track.track_artist}</div>
+        <div style="font-weight: bold; margin-bottom: 6px; font-size: 1.05em; color: #333;">${track.track_artist}</div>
+        <div style="color: #666; font-size: 0.95em; margin-bottom: 3px;">${songTitle}</div>
         ${track.track_album ? `<div style="color: #888; font-size: 0.85em; line-height: 1.3;">${track.track_album}</div>` : ''}
       </div>
       <button onclick="removeTrackFromPlaylist(${playlistId}, ${track.id}, '${track.track_name.replace(/'/g, "\\'")}', this)" style="
