@@ -1,21 +1,6 @@
 # 🎵 BeatSync Mixer
 
-A collaborative music queueing ## ✨ Recent Updates
-
-### v2.1 - Listener Differentiation & UI Fixes (August 2025)
-- 👥 **Multi-Listener Support**: Multiple listeners now automatically numbered (Listener 1, Listener 2, etc.)
-- 🔧 **Track Parsing Fix**: Fixed song title/artist extraction for "Add to Playlist" functionality
-- 🎵 **Recommendation Tracks**: Fixed tracks added from recommendations to be fully functional
-- 🧹 **Code Cleanup**: Removed excessive debugging and streamlined codebase
-- ⚡ **WebSocket Optimization**: Improved real-time user identification and session management
-
-### v2.0 - Enhanced UX & Modular Architecture (August 2025)
-- 🎨 **Smooth Animations**: Beautiful card-like sliding animations for queue reordering
-- 🔘 **Improved Voting**: Fixed vote button behavior with elegant green glow effects
-- 🏗️ **Modular Codebase**: Complete architectural refactor for maintainability
-- 📱 **Better UI**: Fixed "UP NEXT" label positioning and improved visual hierarchy
-- ⚡ **Performance**: Optimized real-time updates and reduced code complexity
-- 🧹 **Code Cleanup**: Removed legacy code and implemented modern patternscation that connects with Spotify to let users browse playlists, queue tracks, and vote on music in real-time. Features synchronized playback, democratic voting, and intelligent music recommendations.
+A collaborative music queueing web application that connects with Spotify to let users browse playlists, queue tracks, and vote on music in real-time. Features synchronized playback, democratic voting, and intelligent music recommendations.
 
 [![Deploy Status](https://img.shields.io/badge/deployed-heroku-success)](https://beatsync-mixer-5715861af181.herokuapp.com/)
 [![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/)
@@ -65,7 +50,7 @@ A collaborative music queueing ## ✨ Recent Updates
 - Robust error handling and graceful degradation
 - Heroku-optimized deployment with DNS fallback strategies
 
-## ✨ Recent Updates
+## 🌐 Try it Live
 
 ### v2.0 - Enhanced UX & Modular Architecture (August 2025)
 - 🎨 **Smooth Animations**: Beautiful card-like sliding animations for queue reordering
