@@ -1,13 +1,7 @@
 # 🎵 BeatSync Mixer
 
-A collaborative music queueing web a### v2.0 - Enhanced UX & Optimized Performance (August 2025)
-- 🎨 **Smooth Animations**: Beautiful card-like sliding animations for queue reordering
-- 🗳️ **Improved Voting**: Fixed vote button behavior with elegant green glow effects
-- 🏗️ **Modular Codebase**: Complete architectural refactor for maintainability
-- 📱 **Better UI**: Fixed "UP NEXT" label positioning and improved visual hierarchy
-- ⚡ **Blazing Performance**: Sub-second API responses with optimized DNS handling
-- 🔧 **Production Ready**: Reliable Spotify and Last.fm integrations on Heroku
-- 🧹 **Code Cleanup**: Removed legacy code and implemented modern patternsion that connects with Spotify to let users browse playlists, queue tracks, and vote on music in real-time. Features synchronized playback, democratic voting, and intelligent music recommendations.
+A collaborative music queueing web music player
+
 
 [![Deploy Status](https://img.shields.io/badge/deployed-heroku-success)](https://beatsync-mixer-5715861af181.herokuapp.com/)
 [![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/)
@@ -35,14 +29,11 @@ A collaborative music queueing web a### v2.0 - Enhanced UX & Optimized Performan
 ### 🗳️ **Voting System**
 - Real-time thumbs up/down voting with smooth animations
 - Queue automatically reorders based on vote scores
-- Card-like sliding animations when songs change position
+- Songs dynamically switch queue order
 - "UP NEXT" indicator for highest-voted track
-- Democratic queue management with fair voting
 
 ### 🎯 **Music Recommendations**
 - Last.fm API integration for intelligent music discovery
-- Fast and reliable recommendations with DNS fallback for Heroku
-- Context-aware track suggestions based on current playlist
 - Smart recommendation algorithms for music exploration
 - Sub-second response times with optimized caching
 
@@ -62,13 +53,7 @@ A collaborative music queueing web a### v2.0 - Enhanced UX & Optimized Performan
 
 ## 🌐 Try it Live
 
-### v2.0 - Enhanced UX & Modular Architecture (August 2025)
-- 🎨 **Smooth Animations**: Beautiful card-like sliding animations for queue reordering
-- �️ **Improved Voting**: Fixed vote button behavior with elegant green glow effects
-- 🏗️ **Modular Codebase**: Complete architectural refactor for maintainability
-- 📱 **Better UI**: Fixed "UP NEXT" label positioning and improved visual hierarchy
-- ⚡ **Performance**: Optimized real-time updates and reduced code complexity
-- 🧹 **Code Cleanup**: Removed legacy code and implemented modern patterns
+
 
 ### Key Improvements
 - **Automatic Listener Numbering**: Each new listener gets a unique number (Listener 1, 2, 3, etc.)
@@ -317,8 +302,7 @@ pytest --cov=. tests/
 - Monitor Heroku dyno metrics for scaling decisions
 
 ## 🤝 Contributing
-
-We welcome contributions! Here's how to get started:
+Here's how to get started:
 
 1. **Fork** the repository
 2. **Create** a feature branch: `git checkout -b feature/amazing-feature`
@@ -334,9 +318,6 @@ We welcome contributions! Here's how to get started:
 - Update documentation as needed
 - Ensure backward compatibility
 
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ---
 
