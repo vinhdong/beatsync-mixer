@@ -1,6 +1,6 @@
 """
 Last.fm API integration for BeatSync Mixer.
-Handles music recommendations and track similarity.
+Optimized for speed with shorter timeouts and efficient error handling.
 """
 
 import os
@@ -8,7 +8,7 @@ import requests
 
 
 def get_similar_tracks(artist, title, limit=5):
-    """Get similar tracks from Last.fm API with fallback methods"""
+    """Get similar tracks from Last.fm API with optimized performance"""
     api_key = os.getenv("LASTFM_API_KEY")
     if not api_key:
         print("❌ Last.fm API key not configured")
@@ -20,173 +20,106 @@ def get_similar_tracks(artist, title, limit=5):
         'track': title,
         'api_key': api_key,
         'format': 'json',
-        'limit': str(min(limit, 3))  # Request fewer tracks for faster response
+        'limit': str(min(limit, 3))  # Reduced limit for faster response
     }
     
-    # Try multiple approaches for better reliability on Heroku
-    print(f"🎵 Getting Last.fm recommendations for: {artist} - {title}")
-    
-    # Method 1: Try HTTP first (often more reliable than HTTPS on Heroku)
-    urls_to_try = [
-        "http://ws.audioscrobbler.com/2.0/",
-        "https://ws.audioscrobbler.com/2.0/"
-    ]
-    
-    for attempt, url in enumerate(urls_to_try):
-        try:
-            print(f"Attempt {attempt + 1}: {url}")
-            
-            response = requests.get(
-                url,
-                params=params,
-                timeout=(4, 8),  # Slightly longer timeout for better success rate
-                headers={
-                    'User-Agent': 'BeatSyncMixer/1.0',
-                    'Accept': 'application/json'
-                }
-            )
-            
-            print(f"Last.fm API response status: {response.status_code}")
-            
-            if response.status_code == 200:
-                data = response.json()
-                
-                if 'error' in data:
-                    print(f"❌ Last.fm API error: {data.get('message', 'Unknown error')}")
-                    continue  # Try next URL
-                
-                similar_tracks = []
-                tracks = data.get('similartracks', {}).get('track', [])
-                
-                if isinstance(tracks, dict):
-                    tracks = [tracks]
-                
-                for track in tracks[:limit]:
-                    artist_name = track.get('artist', {})
-                    if isinstance(artist_name, dict):
-                        artist_name = artist_name.get('name', 'Unknown Artist')
-                    elif isinstance(artist_name, str):
-                        artist_name = artist_name
-                    else:
-                        artist_name = 'Unknown Artist'
-                    
-                    similar_tracks.append({
-                        'artist': artist_name,
-                        'title': track.get('name', 'Unknown Title'),
-                        'url': track.get('url', '#'),
-                        'source': 'Last.fm'
-                    })
-                
-                print(f"✅ Found {len(similar_tracks)} recommendations")
-                return similar_tracks
-            else:
-                print(f"❌ Last.fm API returned status {response.status_code}: {response.text}")
-                continue  # Try next URL
-                
-        except Exception as e:
-            print(f"❌ Last.fm API call failed with {url}: {e}")
-            continue  # Try next URL
-    
-    # If we get here, the API call failed - try faster IP fallback
-    print("🔄 Trying IP fallback...")
-    
-    # Fallback to IP-based call with even shorter timeout
-    ip_addresses = ["130.211.19.189", "64.34.119.12"]  # Updated IP addresses for Last.fm
-    
-    for ip in ip_addresses:
-        try:
-            url = f"http://{ip}/2.0/"
-            headers = {
-                'Host': 'ws.audioscrobbler.com',
-                'User-Agent': 'BeatSyncMixer/1.0'
-            }
-            
-            print(f"Trying IP fallback: {ip}")
-            
-            response = requests.get(
-                url,
-                params=params,
-                headers=headers,
-                timeout=(2, 3)  # Very short timeout for IP fallback
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
-                
-                if 'error' in data:
-                    print(f"Last.fm API error (IP {ip}): {data.get('message', 'Unknown error')}")
-                    continue
-                
-                similar_tracks = []
-                tracks = data.get('similartracks', {}).get('track', [])
-                
-                if isinstance(tracks, dict):
-                    tracks = [tracks]
-                
-                for track in tracks[:limit]:
-                    artist_name = track.get('artist', {})
-                    if isinstance(artist_name, dict):
-                        artist_name = artist_name.get('name', 'Unknown Artist')
-                    elif isinstance(artist_name, str):
-                        artist_name = artist_name
-                    else:
-                        artist_name = 'Unknown Artist'
-                    
-                    similar_tracks.append({
-                        'artist': artist_name,
-                        'title': track.get('name', 'Unknown Title'),
-                        'url': track.get('url', '#'),
-                        'source': 'Last.fm'
-                    })
-                
-                print(f"✅ Found {len(similar_tracks)} recommendations via IP {ip}")
-                return similar_tracks
-                
-        except Exception as e:
-            print(f"IP fallback failed for {ip}: {e}")
-            continue
-    
-    # Final fallback: try HTTPS quickly
+    # Optimized: Single HTTP request with shorter timeout for speed
     try:
-        print("🔄 Trying HTTPS as final fallback...")
+        print(f"🎵 Getting Last.fm recommendations for: {artist} - {title}")
+        
         response = requests.get(
-            "https://ws.audioscrobbler.com/2.0/",
+            "http://ws.audioscrobbler.com/2.0/",
             params=params,
-            timeout=(2, 3),
+            timeout=(2, 4),  # Reduced from (4, 8) for much faster response
+            headers={
+                'User-Agent': 'BeatSyncMixer/1.0',
+                'Accept': 'application/json'
+            }
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            
+            if 'error' in data:
+                print(f"❌ Last.fm API error: {data.get('message', 'Unknown error')}")
+                return []
+            
+            similar_tracks = []
+            tracks = data.get('similartracks', {}).get('track', [])
+            
+            if isinstance(tracks, dict):
+                tracks = [tracks]
+            
+            for track in tracks[:limit]:
+                artist_name = track.get('artist', {})
+                if isinstance(artist_name, dict):
+                    artist_name = artist_name.get('name', 'Unknown Artist')
+                elif isinstance(artist_name, str):
+                    artist_name = artist_name
+                else:
+                    artist_name = 'Unknown Artist'
+                
+                similar_tracks.append({
+                    'artist': artist_name,
+                    'title': track.get('name', 'Unknown Title'),
+                    'url': track.get('url', '#'),
+                    'source': 'Last.fm'
+                })
+            
+            print(f"✅ Found {len(similar_tracks)} recommendations")
+            return similar_tracks
+        else:
+            print(f"❌ Last.fm API returned status {response.status_code}")
+            return []
+            
+    except Exception as e:
+        print(f"❌ Last.fm API call failed: {e}")
+        return []
+
+
+def get_top_tracks(artist, limit=5):
+    """Get top tracks for an artist from Last.fm API"""
+    api_key = os.getenv("LASTFM_API_KEY")
+    if not api_key:
+        return []
+    
+    params = {
+        'method': 'artist.gettoptracks',
+        'artist': artist,
+        'api_key': api_key,
+        'format': 'json',
+        'limit': str(limit)
+    }
+    
+    try:
+        response = requests.get(
+            "http://ws.audioscrobbler.com/2.0/",
+            params=params,
+            timeout=(2, 4),  # Fast timeout
             headers={'User-Agent': 'BeatSyncMixer/1.0'}
         )
         
         if response.status_code == 200:
             data = response.json()
             if 'error' not in data:
-                similar_tracks = []
-                tracks = data.get('similartracks', {}).get('track', [])
-                
+                tracks = data.get('toptracks', {}).get('track', [])
                 if isinstance(tracks, dict):
                     tracks = [tracks]
                 
+                top_tracks = []
                 for track in tracks[:limit]:
-                    artist_name = track.get('artist', {})
-                    if isinstance(artist_name, dict):
-                        artist_name = artist_name.get('name', 'Unknown Artist')
-                    elif isinstance(artist_name, str):
-                        artist_name = artist_name
-                    else:
-                        artist_name = 'Unknown Artist'
-                    
-                    similar_tracks.append({
-                        'artist': artist_name,
+                    top_tracks.append({
+                        'artist': artist,
                         'title': track.get('name', 'Unknown Title'),
                         'url': track.get('url', '#'),
                         'source': 'Last.fm'
                     })
                 
-                print(f"✅ Found {len(similar_tracks)} recommendations via HTTPS")
-                return similar_tracks
+                return top_tracks
+                
     except Exception as e:
-        print(f"HTTPS fallback failed: {e}")
+        print(f"Error getting top tracks from Last.fm: {e}")
     
-    print("❌ All Last.fm API attempts failed")
     return []
 
 
@@ -208,7 +141,7 @@ def get_track_info(artist, title):
         response = requests.get(
             "http://ws.audioscrobbler.com/2.0/",
             params=params,
-            timeout=(3, 5),
+            timeout=(2, 3),  # Very fast timeout for track info
             headers={'User-Agent': 'BeatSyncMixer/1.0'}
         )
         

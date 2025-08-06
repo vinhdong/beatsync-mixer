@@ -1,9 +1,10 @@
 """
 Recommendation routes for BeatSync Mixer.
-Handles Last.fm integration for music recommendations.
+Handles Last.fm integration for music recommendations with caching.
 """
 
-from flask import Blueprint, request, jsonify
+import hashlib
+from flask import Blueprint, request, jsonify, current_app
 from backend.models.models import get_db, QueueItem
 from backend.api.lastfm import get_similar_tracks
 
@@ -11,9 +12,16 @@ from backend.api.lastfm import get_similar_tracks
 recommend_bp = Blueprint('recommend', __name__)
 
 
+def get_cache_key(artist, title):
+    """Generate a cache key for recommendations"""
+    # Create a hash of the artist and title for consistent caching
+    key_string = f"rec:{artist.lower()}:{title.lower()}"
+    return hashlib.md5(key_string.encode()).hexdigest()[:16]
+
+
 @recommend_bp.route("/<track_uri>")
 def recommend(track_uri):
-    """Get Last.fm recommendations for a queued track"""
+    """Get Last.fm recommendations for a queued track with caching"""
     try:
         with get_db() as db:
             # Find the track in the queue
@@ -46,8 +54,25 @@ def recommend(track_uri):
             if not title:
                 return jsonify({"error": "Could not parse title from track name"}), 400
             
+            # Check cache first (30 minute expiration for recommendations)
+            cache_key = get_cache_key(artist, title)
+            if hasattr(current_app, 'cache'):
+                cached_recommendations = current_app.cache.get(cache_key)
+                if cached_recommendations:
+                    print(f"✅ Returning cached recommendations for {artist} - {title}")
+                    return jsonify({
+                        "recommendations": cached_recommendations,
+                        "track_uri": track_uri,
+                        "cached": True
+                    })
+            
             # Get Last.fm recommendations using the API module
             recommendations = get_similar_tracks(artist, title, limit=3)
+            
+            # Cache the recommendations for 30 minutes (1800 seconds)
+            if hasattr(current_app, 'cache') and recommendations:
+                current_app.cache.set(cache_key, recommendations, timeout=1800)
+                print(f"💾 Cached recommendations for {artist} - {title}")
             
             if not recommendations:
                 return jsonify({
@@ -61,7 +86,7 @@ def recommend(track_uri):
                     }
                 })
             
-            print(f"✅ Returning {len(recommendations)} recommendations for {artist} - {title}")
+            print(f"✅ Returning {len(recommendations)} fresh recommendations for {artist} - {title}")
             
             return jsonify({
                 "recommendations": recommendations,
