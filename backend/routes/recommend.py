@@ -30,22 +30,33 @@ def recommend(track_uri):
             if not queue_item:
                 return jsonify({"error": "Track not found in queue"}), 404
             
-            # Extract artist and title from track name (basic parsing)
+            # Extract artist and title from track name (improved parsing)
             track_name = queue_item.track_name
             
-            # Parse track name format - it appears to be "Title - Artist1, Artist2, etc."
+            print(f"🎵 Parsing track: '{track_name}'")
+            
+            # Try different parsing strategies
             if " - " in track_name:
+                # Parse track name format - could be "Artist - Title" or "Title - Artist"
                 parts = track_name.split(" - ", 1)
-                title = parts[0].strip()
-                artists_part = parts[1].strip()
+                part1 = parts[0].strip()
+                part2 = parts[1].strip()
                 
-                # Take the first artist from the list
-                if ", " in artists_part:
-                    artist = artists_part.split(", ")[0].strip()
+                # If the second part contains multiple artists (has commas), it's likely artists
+                if ", " in part2:
+                    title = part1
+                    artist = part2.split(", ")[0].strip()  # Take first artist
                 else:
-                    artist = artists_part.strip()
+                    # Default to first part as title, second as artist
+                    title = part1
+                    artist = part2
+            elif " by " in track_name.lower():
+                # Handle "Title by Artist" format
+                parts = track_name.split(" by ", 1)
+                title = parts[0].strip()
+                artist = parts[1].strip()
             else:
-                # Fallback: use track name as title, no artist
+                # Fallback: use entire track name as title
                 title = track_name.strip()
                 artist = "Unknown Artist"
             

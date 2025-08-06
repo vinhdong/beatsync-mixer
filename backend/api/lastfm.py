@@ -5,6 +5,10 @@ Optimized for speed with shorter timeouts and efficient error handling.
 
 import os
 import requests
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 
 def get_similar_tracks(artist, title, limit=5):
@@ -12,6 +16,7 @@ def get_similar_tracks(artist, title, limit=5):
     api_key = os.getenv("LASTFM_API_KEY")
     if not api_key:
         print("❌ Last.fm API key not configured")
+        print(f"🔍 Available env vars: {[k for k in os.environ.keys() if 'LASTFM' in k]}")
         return []
     
     params = {
@@ -25,23 +30,27 @@ def get_similar_tracks(artist, title, limit=5):
     
     # Optimized: Single HTTP request with shorter timeout for speed
     try:
-        print(f"🎵 Getting Last.fm recommendations for: {artist} - {title}")
+        print(f"🎵 Getting Last.fm recommendations for: '{artist}' - '{title}'")
+        print(f"🔑 Using API key: {api_key[:8]}..." if api_key else "❌ No API key")
         
         response = requests.get(
             "http://ws.audioscrobbler.com/2.0/",
             params=params,
-            timeout=(2, 4),  # Reduced from (4, 8) for much faster response
+            timeout=(3, 6),  # Slightly increased for reliability
             headers={
                 'User-Agent': 'BeatSyncMixer/1.0',
                 'Accept': 'application/json'
             }
         )
         
+        print(f"📡 Last.fm API response status: {response.status_code}")
+        
         if response.status_code == 200:
             data = response.json()
+            print(f"📊 Last.fm response keys: {list(data.keys())}")
             
             if 'error' in data:
-                print(f"❌ Last.fm API error: {data.get('message', 'Unknown error')}")
+                print(f"❌ Last.fm API error {data.get('error', 'Unknown')}: {data.get('message', 'Unknown error')}")
                 return []
             
             similar_tracks = []
